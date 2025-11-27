@@ -11,17 +11,6 @@ interface EditGameModalProps {
 export const EditGameModal: React.FC<EditGameModalProps> = ({ game, onClose }) => {
     const [formData, setFormData] = useState<Partial<Game>>({ ...game });
     const [activeTab, setActiveTab] = useState<'general' | 'media' | 'advanced'>('general');
-    // Actually, we need a generic updateGame action in the store. I'll add it later.
-    // For now, let's just simulate it or use the specific ones we added.
-
-    // Wait, I didn't add a generic updateGame action to the store. 
-    // I should probably add one to the store to handle all these updates in one go.
-    // But for now, I'll just use the existing specific actions for the parts that are supported
-    // and maybe add a generic one if needed.
-
-    // Actually, looking at the requirements, "Edit..." opens a dialog to edit EVERYTHING.
-    // So I really should have a `updateGame(gameId, updates)` action.
-    // I'll add that to the store in the next step.
 
     const handleChange = (field: keyof Game, value: any) => {
         setFormData(prev => ({ ...prev, [field]: value }));

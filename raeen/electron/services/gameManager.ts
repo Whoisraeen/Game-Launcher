@@ -412,6 +412,19 @@ export class GameManager {
                         exec(riotCommand);
                     }
                     break;
+                case 'itch':
+                case 'amazon':
+                case 'manual':
+                case 'default':
+                    if (game.executable && game.install_path) {
+                        const execPath = path.join(game.install_path, game.executable);
+                        const command = `"${execPath}" ${launchOptions}`;
+                        console.log(`Executing: ${command} in ${game.install_path}`);
+                        exec(command, { cwd: game.install_path });
+                    } else {
+                        throw new Error(`Cannot launch game: No executable found for ${game.title}`);
+                    }
+                    break;
                 case 'emulated':
                     const launchInfo = this.scanner.emulationService.getLaunchCommand(game.platform_id);
                     if (launchInfo) {
@@ -510,6 +523,8 @@ export class GameManager {
                 case 'origin': await shell.openExternal('origin://'); break;
                 case 'uplay': await shell.openExternal('uplay://'); break;
                 case 'battlenet': await shell.openExternal('battlenet://'); break;
+                case 'itch': await shell.openExternal('itch://'); break;
+                case 'amazon': await shell.openExternal('amazon-games://'); break;
                 default: console.log(`No handler for opening platform ${platform}`);
             }
         } catch (e) {
@@ -579,6 +594,12 @@ export class GameManager {
                 // Opens Xbox App store page
                 await shell.openExternal(`ms-windows-store://pdp/?ProductId=${game.platform_id}`);
                 return true;
+            case 'itch':
+                await this.openPlatform('itch');
+                return false;
+            case 'amazon':
+                await this.openPlatform('amazon');
+                return false;
             default:
                 // For others, best effort is opening the platform
                 await this.openPlatform(game.platform);
@@ -606,6 +627,40 @@ export class GameManager {
                 break;
         }
         return true;
+    }
+
+    async verifyGame(gameId: string) {
+        const db = getDb();
+        const game = db.prepare('SELECT platform, platform_id FROM games WHERE id = ?').get(gameId) as any;
+        if (!game) throw new Error('Game not found');
+
+        switch (game.platform) {
+            case 'steam':
+                await shell.openExternal(`steam://validate/${game.platform_id}`);
+                return true;
+            case 'epic':
+                await shell.openExternal(`com.epicgames.launcher://apps/${game.platform_id}?action=verify`);
+                return true;
+            default:
+                throw new Error('Verification not supported for this platform');
+        }
+    }
+
+    async killGame(gameId: string) {
+        const db = getDb();
+        const game = db.prepare('SELECT executable FROM games WHERE id = ?').get(gameId) as any;
+        if (!game || !game.executable) throw new Error('Game executable not found');
+
+        const processList = await this.processManager.getProcessList();
+        const gameProcess = processList.find(p => p.name.toLowerCase() === game.executable.toLowerCase());
+
+        if (gameProcess) {
+            console.log(`Killing process ${game.executable} (PID: ${gameProcess.pid})`);
+            await this.processManager.killProcess(gameProcess.pid);
+            return true;
+        } else {
+            throw new Error('Game process not found running');
+        }
     }
 
     async updateGameDetails(gameId: string, updates: any) {

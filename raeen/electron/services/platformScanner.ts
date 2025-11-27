@@ -6,12 +6,14 @@ import { UbisoftLibrary } from './UbisoftLibrary';
 import { OriginLibrary } from './OriginLibrary';
 import { XboxLibrary } from './XboxLibrary';
 import { RiotLibrary } from './RiotLibrary';
+import { ItchLibrary } from './ItchLibrary';
+import { AmazonLibrary } from './AmazonLibrary';
 import { ManualGameService } from './ManualGameService';
 import { EmulationService } from './EmulationService';
 import * as path from 'path';
 
 export interface ScannedGame {
-    platform: 'steam' | 'epic' | 'gog' | 'origin' | 'uplay' | 'battlenet' | 'xbox' | 'riot' | 'manual' | 'emulated' | 'other';
+    platform: 'steam' | 'epic' | 'gog' | 'origin' | 'uplay' | 'battlenet' | 'xbox' | 'riot' | 'itch' | 'amazon' | 'manual' | 'emulated' | 'other';
     platformId: string;
     title: string;
     installPath: string;
@@ -30,6 +32,8 @@ export class PlatformScanner {
     public originLibrary: OriginLibrary;
     public xboxLibrary: XboxLibrary;
     public riotLibrary: RiotLibrary;
+    public itchLibrary: ItchLibrary;
+    public amazonLibrary: AmazonLibrary;
     public manualGameService: ManualGameService;
     public emulationService: EmulationService;
 
@@ -42,6 +46,8 @@ export class PlatformScanner {
         this.originLibrary = new OriginLibrary();
         this.xboxLibrary = new XboxLibrary();
         this.riotLibrary = new RiotLibrary();
+        this.itchLibrary = new ItchLibrary();
+        this.amazonLibrary = new AmazonLibrary();
         this.manualGameService = new ManualGameService();
         this.emulationService = new EmulationService();
     }
@@ -57,6 +63,8 @@ export class PlatformScanner {
             this.scanOrigin(),
             this.scanXbox(),
             this.scanRiot(),
+            this.scanItch(),
+            this.scanAmazon(),
             this.scanManual(),
             this.scanEmulated()
         ]);
@@ -228,6 +236,38 @@ export class PlatformScanner {
         }
     }
 
+    async scanItch(): Promise<ScannedGame[]> {
+        try {
+            const games = await this.itchLibrary.getInstalledGames();
+            return games.map(g => ({
+                platform: 'itch',
+                platformId: g.id,
+                title: g.title,
+                installPath: g.installPath,
+                executable: g.executable
+            }));
+        } catch (e) {
+            console.error('Itch scan failed:', e);
+            return [];
+        }
+    }
+
+    async scanAmazon(): Promise<ScannedGame[]> {
+        try {
+            const games = await this.amazonLibrary.getInstalledGames();
+            return games.map(g => ({
+                platform: 'amazon',
+                platformId: g.id,
+                title: g.title,
+                installPath: g.installPath,
+                executable: g.executable
+            }));
+        } catch (e) {
+            console.error('Amazon scan failed:', e);
+            return [];
+        }
+    }
+
     getLaunchCommand(platform: string, id: string): string {
         switch (platform) {
             case 'steam': return this.steamLibrary.getLaunchCommand(id);
@@ -238,8 +278,10 @@ export class PlatformScanner {
             case 'origin': return this.originLibrary.getLaunchCommand(id);
             case 'xbox': return this.xboxLibrary.getLaunchCommand(id);
             case 'riot': return this.riotLibrary.getLaunchCommand(id);
-            case 'manual': return ''; // Manual games are handled by executable path
-            case 'emulated': return ''; // Emulated games are handled by EmulationService
+            case 'itch': return this.itchLibrary.getLaunchCommand(id);
+            case 'amazon': return this.amazonLibrary.getLaunchCommand(id);
+            case 'manual': return ''; 
+            case 'emulated': return '';
             default: return '';
         }
     }

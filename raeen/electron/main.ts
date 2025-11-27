@@ -141,6 +141,24 @@ function createWindow() {
     }
   });
 
+  ipcMain.handle('games:verify', async (_, gameId: string) => {
+    try {
+      return await gameManager.verifyGame(gameId);
+    } catch (error) {
+      console.error('Failed to verify game:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle('games:kill', async (_, gameId: string) => {
+    try {
+      return await gameManager.killGame(gameId);
+    } catch (error) {
+      console.error('Failed to kill game:', error);
+      throw error;
+    }
+  });
+
   ipcMain.handle('games:getWeeklyActivity', () => {
     try {
       return gameManager.getWeeklyActivity();

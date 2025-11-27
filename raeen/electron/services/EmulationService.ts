@@ -9,6 +9,7 @@ export interface Emulator {
     executable: string;
     arguments: string; // e.g. "-f {rom}"
     platforms: string[]; // e.g. ["nes", "snes"]
+    extensions: string[]; // e.g. [".nes", ".sfc"]
 }
 
 export interface EmulatedGame {
@@ -66,14 +67,16 @@ export class EmulationService {
             name: 'RetroArch',
             executable: 'C:\\RetroArch\\retroarch.exe',
             arguments: '-L {core} {rom}',
-            platforms: ['nes', 'snes', 'gba', 'n64', 'ps1']
+            platforms: ['nes', 'snes', 'gba', 'n64', 'ps1'],
+            extensions: ['.nes', '.sfc', '.smc', '.gba', '.gbc', '.n64', '.z64', '.cue', '.iso', '.chd']
         });
         this.emulators.push({
             id: uuidv4(),
             name: 'Dolphin',
             executable: 'C:\\Dolphin\\Dolphin.exe',
             arguments: '-b -e {rom}',
-            platforms: ['gc', 'wii']
+            platforms: ['gc', 'wii'],
+            extensions: ['.iso', '.gcz', '.wbfs', '.rvz', '.ciso']
         });
         this.saveData();
     }
@@ -86,13 +89,14 @@ export class EmulationService {
         return this.games;
     }
 
-    addEmulator(name: string, executable: string, args: string, platforms: string[]): Emulator {
+    addEmulator(name: string, executable: string, args: string, platforms: string[], extensions: string[]): Emulator {
         const emu: Emulator = {
             id: uuidv4(),
             name,
             executable,
             arguments: args,
-            platforms
+            platforms,
+            extensions
         };
         this.emulators.push(emu);
         this.saveData();
@@ -111,6 +115,44 @@ export class EmulationService {
         this.games.push(game);
         this.saveData();
         return game;
+    }
+
+    async scanRomFolder(folderPath: string, platform: string, emulatorId: string): Promise<EmulatedGame[]> {
+        if (!fs.existsSync(folderPath)) return [];
+
+        const emulator = this.emulators.find(e => e.id === emulatorId);
+        if (!emulator) throw new Error('Emulator not found');
+
+        const foundGames: EmulatedGame[] = [];
+        
+        const walk = (dir: string) => {
+            const list = fs.readdirSync(dir);
+            for (const file of list) {
+                const filePath = path.join(dir, file);
+                const stat = fs.statSync(filePath);
+                
+                if (stat && stat.isDirectory()) {
+                    walk(filePath);
+                } else {
+                    const ext = path.extname(file).toLowerCase();
+                    if (emulator.extensions.includes(ext)) {
+                        // Check if already added
+                        if (!this.games.some(g => g.romPath === filePath)) {
+                            const title = path.basename(file, ext);
+                            foundGames.push(this.addGame(title, filePath, platform, emulatorId));
+                        }
+                    }
+                }
+            }
+        };
+
+        try {
+            walk(folderPath);
+        } catch (e) {
+            console.error('ROM Scan failed:', e);
+        }
+
+        return foundGames;
     }
 
     getLaunchCommand(gameId: string): { command: string, cwd: string } | undefined {
