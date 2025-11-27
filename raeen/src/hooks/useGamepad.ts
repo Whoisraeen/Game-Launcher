@@ -20,6 +20,12 @@ export const useGamepad = ({ onButtonDown, threshold = 0.5, throttle = 150 }: Us
     const [connected, setConnected] = useState(false);
     const lastInputTime = useRef<number>(0);
     const requestRef = useRef<number>();
+    const onButtonDownRef = useRef(onButtonDown);
+
+    // Keep ref updated to avoid stale closures in the loop
+    useEffect(() => {
+        onButtonDownRef.current = onButtonDown;
+    }, [onButtonDown]);
 
     useEffect(() => {
         const scanGamepads = () => {
@@ -43,29 +49,27 @@ export const useGamepad = ({ onButtonDown, threshold = 0.5, throttle = 150 }: Us
                     gp.buttons.forEach((b, i) => {
                         if (b.pressed) {
                             const buttonName = BUTTON_MAP[i];
-                            if (buttonName && onButtonDown) {
-                                onButtonDown(buttonName);
+                            if (buttonName && onButtonDownRef.current) {
+                                onButtonDownRef.current(buttonName);
                                 lastInputTime.current = now;
                             }
                         }
                     });
 
                     // Check Axes for D-pad emulation (Left Stick)
-                    // Axis 0: Left/Right (-1 to 1)
-                    // Axis 1: Up/Down (-1 to 1)
                     if (gp.axes[0] < -threshold) {
-                        onButtonDown?.('Left');
+                        onButtonDownRef.current?.('Left');
                         lastInputTime.current = now;
                     } else if (gp.axes[0] > threshold) {
-                        onButtonDown?.('Right');
+                        onButtonDownRef.current?.('Right');
                         lastInputTime.current = now;
                     }
 
                     if (gp.axes[1] < -threshold) {
-                        onButtonDown?.('Up');
+                        onButtonDownRef.current?.('Up');
                         lastInputTime.current = now;
                     } else if (gp.axes[1] > threshold) {
-                        onButtonDown?.('Down');
+                        onButtonDownRef.current?.('Down');
                         lastInputTime.current = now;
                     }
                 }
@@ -76,22 +80,20 @@ export const useGamepad = ({ onButtonDown, threshold = 0.5, throttle = 150 }: Us
             requestRef.current = requestAnimationFrame(scanGamepads);
         };
 
-        window.addEventListener("gamepadconnected", () => {
-            console.log("Gamepad connected");
-            setConnected(true);
-        });
+        const handleConnect = () => setConnected(true);
+        const handleDisconnect = () => setConnected(false);
 
-        window.addEventListener("gamepaddisconnected", () => {
-            console.log("Gamepad disconnected");
-            setConnected(false);
-        });
+        window.addEventListener("gamepadconnected", handleConnect);
+        window.addEventListener("gamepaddisconnected", handleDisconnect);
 
         requestRef.current = requestAnimationFrame(scanGamepads);
 
         return () => {
+            window.removeEventListener("gamepadconnected", handleConnect);
+            window.removeEventListener("gamepaddisconnected", handleDisconnect);
             if (requestRef.current) cancelAnimationFrame(requestRef.current);
         };
-    }, [connected, onButtonDown, threshold, throttle]);
+    }, [connected, threshold, throttle]); // Removed onButtonDown from deps
 
     return { connected };
 };

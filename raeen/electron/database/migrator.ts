@@ -120,6 +120,13 @@ const migrations: Migration[] = [
                     created_at INTEGER
                 )
             `);
+        },
+    },
+    {
+        version: 2,
+        name: 'add_video_url',
+        up: (db) => {
+            db.exec('ALTER TABLE games ADD COLUMN video_url TEXT;');
         }
     }
 ];

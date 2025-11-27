@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, shell } from 'electron'
+import { app, BrowserWindow, ipcMain, shell, dialog } from 'electron'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import log from 'electron-log';
@@ -8,9 +8,11 @@ import { GameManager } from './services/gameManager'
 import { SettingsManager } from './services/settingsManager'
 import { HardwareMonitor } from './services/hardwareMonitor'
 import { FriendsManager } from './services/friendsManager'
-import { ModsManager } from './services/ModsManager'
+import { UniversalModManager } from './services/modManager'
 import { NewsManager } from './services/newsManager'
 import { RecommendationManager } from './services/recommendationManager'
+import { ImageCacheService } from './services/ImageCacheService'
+import { ManualGameService } from './services/ManualGameService'
 
 // Configure Logger
 log.initialize();
@@ -30,9 +32,11 @@ let gameManager: GameManager;
 let settingsManager: SettingsManager;
 let hardwareMonitor: HardwareMonitor;
 let friendsManager: FriendsManager;
-let modsManager: ModsManager;
+let universalModManager: UniversalModManager;
 let newsManager: NewsManager;
 let recommendationManager: RecommendationManager;
+let imageCacheService: ImageCacheService;
+let manualGameService: ManualGameService;
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -58,6 +62,9 @@ function createWindow() {
     icon: path.join(process.env.VITE_PUBLIC, 'electron-vite.svg'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: false // Required for some file system operations if not using full context bridge, but we should aim for true sandbox eventually.
     },
   })
 
@@ -97,6 +104,15 @@ function createWindow() {
     }
   });
 
+  ipcMain.handle('games:getPage', (_, page: number, pageSize: number) => {
+    try {
+      return gameManager.getGamesPage(page, pageSize);
+    } catch (error) {
+      console.error('Failed to get games page:', error);
+      throw error;
+    }
+  });
+
   ipcMain.handle('games:getRecommendations', () => {
     try {
       const games = gameManager.getAllGames() as any[];
@@ -112,6 +128,15 @@ function createWindow() {
       return await gameManager.launchGame(gameId);
     } catch (error) {
       console.error('Failed to launch game:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle('games:install', async (_, gameId: string) => {
+    try {
+      return await gameManager.installGame(gameId);
+    } catch (error) {
+      console.error('Failed to install game:', error);
       throw error;
     }
   });
@@ -305,6 +330,38 @@ function createWindow() {
     }
   });
 
+  ipcMain.handle('dialog:openDirectory', async () => {
+    const result = await dialog.showOpenDialog({
+      properties: ['openDirectory']
+    });
+    if (result.canceled) return null;
+    return result.filePaths[0];
+  });
+
+  // Manual Game Handlers
+  ipcMain.handle('manual:scan', async (_, folderPath: string) => {
+    try {
+      return await manualGameService.scanFolder(folderPath);
+    } catch (error) {
+      console.error('Failed to scan folder:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle('manual:add', async (_, title, installPath, executable) => {
+    try {
+      const id = await manualGameService.addGame(title, installPath, executable);
+      // Trigger cache for metadata if possible?
+      // We can't easily do it here without circular dep or duplication.
+      // Frontend can reload games which triggers cache if sync called?
+      // Or we just add basic metadata now.
+      return id;
+    } catch (error) {
+      console.error('Failed to add manual game:', error);
+      throw error;
+    }
+  });
+
   // Friends IPC Handlers
   ipcMain.handle('friends:getAll', () => {
     return friendsManager.getAll();
@@ -331,21 +388,30 @@ function createWindow() {
     return friendsManager.simulateActivity();
   });
 
-  // Mods IPC Handlers
+  // Mods IPC Handlers (Universal)
   ipcMain.handle('mods:getAll', () => {
-    return modsManager.getAllPacks();
+    return universalModManager.getAllMods();
   });
 
-  ipcMain.handle('mods:create', (_, { name, mcVersion, loader, loaderVersion }) => {
-    return modsManager.createPack(name, mcVersion, loader, loaderVersion);
+  ipcMain.handle('mods:add', (_, gameId, name, description, version, installPath) => {
+    return universalModManager.addMod(gameId, name, description, version, installPath);
   });
 
-  ipcMain.handle('mods:search', async (_, { query, source }) => {
-    if (source === 'modrinth') {
-      return await modsManager.searchModrinth(query);
-    } else {
-      return await modsManager.searchCurseforge(query);
+  ipcMain.handle('mods:delete', (_, id) => {
+    return universalModManager.deleteMod(id);
+  });
+
+  ipcMain.handle('mods:update', async (_, id, updates) => {
+    // Handle enable/disable logic if present
+    if (updates.enabled !== undefined) {
+      if (updates.enabled) {
+        await universalModManager.enableMod(id);
+      } else {
+        await universalModManager.disableMod(id);
+      }
     }
+    // Update DB record
+    return universalModManager.updateMod(id, updates);
   });
 
   // News IPC Handlers
@@ -419,9 +485,29 @@ app.whenReady().then(() => {
   settingsManager = new SettingsManager()
   hardwareMonitor = new HardwareMonitor()
   friendsManager = new FriendsManager()
-  modsManager = new ModsManager()
+  universalModManager = new UniversalModManager()
   newsManager = new NewsManager()
   recommendationManager = new RecommendationManager()
+  imageCacheService = new ImageCacheService()
+  manualGameService = new ManualGameService() // Instantiate ManualGameService
+
+  // Image Cache IPC
+  ipcMain.handle('images:cache', async (_, url: string) => {
+    try {
+      // We use ensureCached to wait for the download if it's missing, 
+      // so the UI gets the local path immediately if possible, or waits a bit.
+      // For a list of 2000 games, this might be too slow if we do it for all.
+      // But for the visible ones (virtualized), it's fine.
+      // Actually cacheImage was the name in ImageCacheService.ts
+      return await imageCacheService.cacheImage(url, 'temp_' + Date.now(), 'cover'); 
+      // Note: This is a simplified wrapper for ad-hoc caching if needed by UI directly.
+      // Real usage is in GameManager.syncLibrary.
+    } catch (error) {
+      console.error('Failed to cache image:', error);
+      return url; // Fallback to original
+    }
+  });
+
   createWindow()
 
   // Check for updates after a short delay

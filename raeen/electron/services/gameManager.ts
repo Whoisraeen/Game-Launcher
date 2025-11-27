@@ -2,6 +2,7 @@ import { PlatformScanner } from './platformScanner';
 import { PlaytimeTracker } from './playtimeTracker';
 import { MetadataFetcher } from './metadataFetcher';
 import { ProcessManager } from './processManager';
+import { ImageCacheService } from './ImageCacheService';
 import { getDb } from '../database';
 import { v4 as uuidv4 } from 'uuid';
 import { exec } from 'child_process';
@@ -15,6 +16,7 @@ export class GameManager {
     private playtimeTracker: PlaytimeTracker;
     private metadataFetcher: MetadataFetcher;
     private processManager: ProcessManager;
+    private imageCache: ImageCacheService;
     private steamLibrary: SteamLibrary;
     private epicLibrary: EpicLibrary;
 
@@ -23,6 +25,7 @@ export class GameManager {
         this.playtimeTracker = new PlaytimeTracker();
         this.metadataFetcher = new MetadataFetcher();
         this.processManager = new ProcessManager();
+        this.imageCache = new ImageCacheService();
         this.steamLibrary = new SteamLibrary();
         this.epicLibrary = new EpicLibrary();
     }
@@ -48,19 +51,15 @@ export class GameManager {
                 let metadata: any = null;
 
                 // Check if we need to fetch metadata
-                // 1. Steam: If we don't have genre
-                // 2. Others: If we don't have cover
                 const needsGenre = !existing?.genre;
                 const needsCover = !game.cover && !existing?.cover_url;
 
                 if (needsGenre || needsCover) {
                     if (game.platform === 'steam') {
-                        // For Steam, we want genres even if we have cover
                         if (needsGenre) {
                             metadata = await this.metadataFetcher.fetchSteamMetadata(game.platformId);
                         }
                     } else if (needsCover) {
-                        // For others, primarily want cover
                         metadata = await this.metadataFetcher.fetchMetadata(game.title);
                     }
                 }
@@ -71,14 +70,51 @@ export class GameManager {
                     result.cover = game.cover || metadata.cover;
                     result.hero = metadata.hero;
                     result.logo = metadata.logo;
-                    result.genre = metadata.genres?.[0]; // Primary genre
+                    result.genre = metadata.genres?.[0]; 
                     result.tags = metadata.genres ? JSON.stringify(metadata.genres) : null;
                     result.achievementsTotal = metadata.achievementsTotal || 0;
+                    result.videoUrl = metadata.videoUrl;
                 } else {
-                    // Preserve existing if we didn't fetch new
                     result.genre = existing?.genre;
                     result.achievementsTotal = existing?.achievements_total || 0;
                 }
+
+                // --- CACHING LOGIC START ---
+                // Determine the ID we will use (either existing or new UUID) so we can cache with it
+                // We need the ID *before* we insert to name files correctly.
+                // Check DB again or use what we found in existingMap?
+                // existingMap key is platform:id.
+                
+                // We need to know the UUID.
+                // If existing, use that ID. If not, generate one.
+                let gameId = existing?.id;
+                // We actually check this inside the transaction loop later, which is inefficient for async caching.
+                // Let's duplicate the check here for the sake of caching.
+                if (!gameId) {
+                    // Check DB synchronously if existingMap didn't capture ID (it should have, let's verify query)
+                    // Query was: SELECT platform, platform_id, genre, cover_url FROM games
+                    // We need ID in that query.
+                    const idCheck = db.prepare('SELECT id FROM games WHERE platform = ? AND platform_id = ?').get(game.platform, game.platformId) as any;
+                    gameId = idCheck ? idCheck.id : uuidv4();
+                }
+
+                // Cache Images (Download to disk)
+                if (result.cover && result.cover.startsWith('http')) {
+                    result.cover = await this.imageCache.cacheImage(result.cover, gameId, 'cover');
+                }
+                if (result.hero && result.hero.startsWith('http')) {
+                    result.hero = await this.imageCache.cacheImage(result.hero, gameId, 'hero');
+                }
+                if (result.logo && result.logo.startsWith('http')) {
+                    result.logo = await this.imageCache.cacheImage(result.logo, gameId, 'logo');
+                }
+                if (result.icon && result.icon.startsWith('http')) {
+                    result.icon = await this.imageCache.cacheImage(result.icon, gameId, 'icon');
+                }
+                // --- CACHING LOGIC END ---
+
+                // Store the ID in result so we use the SAME one in the transaction
+                result._finalId = gameId;
 
                 return result;
             }));
@@ -86,34 +122,30 @@ export class GameManager {
             console.log('Preparing database transaction...');
             const insert = db.prepare(`
           INSERT INTO games (
-            id, title, platform, platform_id, install_path, executable, added_at, is_installed, icon_url, cover_url, background_url, logo_url, genre, tags, achievements_total, achievements_unlocked
+            id, title, platform, platform_id, install_path, executable, added_at, is_installed, icon_url, cover_url, background_url, logo_url, genre, tags, achievements_total, achievements_unlocked, video_url
           ) VALUES (
-            @id, @title, @platform, @platformId, @installPath, @executable, @addedAt, 1, @icon, @cover, @hero, @logo, @genre, @tags, @achievementsTotal, @achievementsUnlocked
+            @id, @title, @platform, @platformId, @installPath, @executable, @addedAt, 1, @icon, @cover, @hero, @logo, @genre, @tags, @achievementsTotal, @achievementsUnlocked, @videoUrl
           )
           ON CONFLICT(id) DO UPDATE SET
             is_installed = 1,
             install_path = @installPath,
             executable = @executable,
-            icon_url = @icon,
+            icon_url = COALESCE(excluded.icon_url, games.icon_url),
             cover_url = COALESCE(excluded.cover_url, games.cover_url),
             background_url = COALESCE(excluded.background_url, games.background_url),
             logo_url = COALESCE(excluded.logo_url, games.logo_url),
             genre = COALESCE(excluded.genre, games.genre),
             tags = COALESCE(excluded.tags, games.tags),
-            achievements_total = MAX(excluded.achievements_total, games.achievements_total)
+            achievements_total = MAX(excluded.achievements_total, games.achievements_total),
+            video_url = COALESCE(excluded.video_url, games.video_url)
         `);
-
-            // We need to check if game already exists by platform_id and platform
-            const check = db.prepare('SELECT id FROM games WHERE platform = ? AND platform_id = ?');
 
             const runTransaction = db.transaction((games: any[]) => {
                 let insertedCount = 0;
                 for (const game of games) {
-                    const existing = check.get(game.platform, game.platformId) as { id: string } | undefined;
-
                     try {
                         insert.run({
-                            id: existing ? existing.id : uuidv4(),
+                            id: game._finalId, // Use the ID we generated/found during caching
                             title: game.title,
                             platform: game.platform,
                             platformId: game.platformId,
@@ -127,7 +159,8 @@ export class GameManager {
                             genre: game.genre || null,
                             tags: game.tags || null,
                             achievementsTotal: game.achievementsTotal || 0,
-                            achievementsUnlocked: 0 // Default to 0 for now
+                            achievementsUnlocked: 0,
+                            videoUrl: game.videoUrl || null
                         });
                         insertedCount++;
                     } catch (err) {
@@ -205,6 +238,14 @@ export class GameManager {
     getAllGames() {
         const db = getDb();
         return db.prepare('SELECT * FROM games ORDER BY sort_order ASC, title ASC').all();
+    }
+
+    getGamesPage(page: number, pageSize: number) {
+        const db = getDb();
+        const offset = (page - 1) * pageSize;
+        const games = db.prepare('SELECT * FROM games ORDER BY sort_order ASC, title ASC LIMIT ? OFFSET ?').all(pageSize, offset);
+        const total = db.prepare('SELECT COUNT(*) as count FROM games').get() as { count: number };
+        return { games, total: total.count };
     }
 
     getWeeklyActivity() {
@@ -401,13 +442,13 @@ export class GameManager {
                 // Give it a moment to start
                 setTimeout(async () => {
                     this.playtimeTracker.startTracking(gameId, game.executable);
-                    
+
                     // Game Mode Optimization
                     // Try to find the process
                     try {
                         const processList = await this.processManager.getProcessList();
                         const gameProcess = processList.find(p => p.name.toLowerCase() === game.executable.toLowerCase());
-                        
+
                         if (gameProcess) {
                             console.log(`Found game process PID: ${gameProcess.pid}. Optimizing...`);
                             const actions = await this.processManager.optimizeSystem(gameProcess.pid);
@@ -519,6 +560,30 @@ export class GameManager {
         }
 
         throw new Error('Cannot create shortcut: missing executable path');
+    }
+
+    async installGame(gameId: string) {
+        const db = getDb();
+        const game = db.prepare('SELECT platform, platform_id FROM games WHERE id = ?').get(gameId) as any;
+        if (!game) throw new Error('Game not found');
+
+        switch (game.platform) {
+            case 'steam':
+                await shell.openExternal(`steam://install/${game.platform_id}`);
+                return true;
+            case 'epic':
+                // Opens launcher to store page usually
+                await shell.openExternal(`com.epicgames.launcher://store/product/${game.platform_id}`); 
+                return true;
+            case 'xbox':
+                // Opens Xbox App store page
+                await shell.openExternal(`ms-windows-store://pdp/?ProductId=${game.platform_id}`);
+                return true;
+            default:
+                // For others, best effort is opening the platform
+                await this.openPlatform(game.platform);
+                return false; // Return false to indicate manual interaction needed
+        }
     }
 
     async uninstallGame(gameId: string) {

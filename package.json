@@ -1,0 +1,5 @@
+{
+  "dependencies": {
+    "igdb-api-node": "^6.0.5"
+  }
+}

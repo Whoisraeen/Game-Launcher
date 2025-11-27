@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
+import React, { createContext, useContext, useState, useCallback } from 'react';
 import { useGamepad } from '../hooks/useGamepad';
 
 // A simple grid-based navigation system
@@ -18,25 +18,21 @@ const NavigationContext = createContext<NavigationContextType | null>(null);
 
 export const NavigationProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const [focusedId, setFocusedId] = useState<string | null>(null);
-    const [elements, setElements] = useState<Map<string, string>>(new Map()); // id -> section
+
     const [activeSection, setActiveSection] = useState('grid');
 
-    const register = useCallback((id: string, section: string) => {
-        setElements(prev => new Map(prev).set(id, section));
+    const register = useCallback((_id: string, _section: string) => {
+        // Placeholder
     }, []);
 
-    const unregister = useCallback((id: string) => {
-        setElements(prev => {
-            const newMap = new Map(prev);
-            newMap.delete(id);
-            return newMap;
-        });
+    const unregister = useCallback((_id: string) => {
+        // Placeholder
     }, []);
 
     // Spatial navigation logic (Simplified for prototype)
     // In a real app, use something like 'lrud' library
     // Here we will just rely on the components to tell us "next" or use DOM order
-    
+
     const moveFocus = (direction: 'Up' | 'Down' | 'Left' | 'Right') => {
         // This is a placeholder. Real spatial nav is complex.
         // Ideally, we dispatch a custom event 'nav-move' and let the active component handle it.

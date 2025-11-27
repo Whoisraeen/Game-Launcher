@@ -1,86 +1,84 @@
+import { getDb } from '../database';
+import { v4 as uuidv4 } from 'uuid';
 import fs from 'fs';
 import path from 'path';
 import { app } from 'electron';
-import { v4 as uuidv4 } from 'uuid';
 
-export interface ManualGame {
-    id: string;
-    title: string;
-    executable: string;
-    installPath: string;
-    arguments?: string;
-    icon?: string;
-    cover?: string;
-    addedAt: number;
-}
+// Supported extensions for scanning
+const EXTENSIONS = [
+    '.exe', '.lnk', '.url', // Windows
+    '.iso', '.bin', '.cue', '.nes', '.snes', '.gba', '.gbc', '.n64', '.z64', '.v64', // Emulation
+    '.chd', '.gcz', '.wbfs', '.rvz', '.ciso' // More Emulation
+];
 
 export class ManualGameService {
-    private storagePath: string;
-    private games: ManualGame[] = [];
+    
+    /**
+     * Recursive folder scanner
+     */
+    async scanFolder(folderPath: string): Promise<any[]> {
+        if (!fs.existsSync(folderPath)) return [];
 
-    constructor() {
-        // Store in userData directory
-        const userDataPath = (app && app.getPath) ? app.getPath('userData') : '.';
-        this.storagePath = path.join(userDataPath, 'manual_games.json');
-        this.loadGames();
-    }
-
-    private loadGames() {
-        try {
-            if (fs.existsSync(this.storagePath)) {
-                const data = fs.readFileSync(this.storagePath, 'utf-8');
-                this.games = JSON.parse(data);
+        const foundGames: any[] = [];
+        
+        // Recursive walk function
+        const walk = (dir: string) => {
+            const list = fs.readdirSync(dir);
+            for (const file of list) {
+                const filePath = path.join(dir, file);
+                const stat = fs.statSync(filePath);
+                
+                if (stat && stat.isDirectory()) {
+                    // Skip common junk folders
+                    if (!['node_modules', '.git', 'Windows', 'Program Files', 'Program Files (x86)'].includes(file)) {
+                        walk(filePath);
+                    }
+                } else {
+                    // Check extension
+                    const ext = path.extname(file).toLowerCase();
+                    if (EXTENSIONS.includes(ext)) {
+                        foundGames.push({
+                            title: path.basename(file, ext), // File name as title
+                            installPath: dir,
+                            executable: file,
+                            platform: 'manual'
+                        });
+                    }
+                }
             }
-        } catch (e) {
-            console.error('Failed to load manual games:', e);
-            this.games = [];
-        }
-    }
-
-    private saveGames() {
-        try {
-            fs.writeFileSync(this.storagePath, JSON.stringify(this.games, null, 2));
-        } catch (e) {
-            console.error('Failed to save manual games:', e);
-        }
-    }
-
-    getGames(): ManualGame[] {
-        return this.games;
-    }
-
-    addGame(title: string, executablePath: string, args?: string): ManualGame {
-        const game: ManualGame = {
-            id: uuidv4(),
-            title: title,
-            executable: executablePath,
-            installPath: path.dirname(executablePath),
-            arguments: args,
-            addedAt: Date.now()
         };
 
-        this.games.push(game);
-        this.saveGames();
-        return game;
+        try {
+            walk(folderPath);
+        } catch (e) {
+            console.error('Scan failed:', e);
+        }
+
+        return foundGames;
     }
 
-    removeGame(id: string): boolean {
-        const initialLength = this.games.length;
-        this.games = this.games.filter(g => g.id !== id);
-        if (this.games.length !== initialLength) {
-            this.saveGames();
-            return true;
-        }
-        return false;
-    }
+    async addGame(title: string, installPath: string, executable: string, platform: string = 'manual') {
+        const db = getDb();
+        const id = uuidv4();
+        const fullPath = path.join(installPath, executable);
 
-    updateGame(id: string, updates: Partial<ManualGame>): ManualGame | undefined {
-        const gameIndex = this.games.findIndex(g => g.id === id);
-        if (gameIndex !== -1) {
-            this.games[gameIndex] = { ...this.games[gameIndex], ...updates };
-            this.saveGames();
-            return this.games[gameIndex];
+        if (!fs.existsSync(fullPath)) {
+            throw new Error('Executable not found');
         }
-        return undefined;
+
+        db.prepare(`
+            INSERT INTO games (id, title, platform, platform_id, install_path, executable, added_at, is_installed)
+            VALUES (@id, @title, @platform, @platformId, @installPath, @executable, @addedAt, 1)
+        `).run({
+            id,
+            title,
+            platform,
+            platformId: id, // Use UUID as platform ID for manual games
+            installPath,
+            executable,
+            addedAt: Date.now()
+        });
+
+        return id;
     }
 }

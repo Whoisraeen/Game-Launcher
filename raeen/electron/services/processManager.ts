@@ -3,6 +3,12 @@ import util from 'util';
 
 const execAsync = util.promisify(exec);
 
+const SYSTEM_SAFELIST = [
+  'explorer.exe', 'svchost.exe', 'csrss.exe', 'wininit.exe', 'winlogon.exe', 
+  'services.exe', 'lsass.exe', 'smss.exe', 'taskmgr.exe', 'registry.exe', 
+  'fontdrvhost.exe', 'dwm.exe', 'electron.exe' // Don't throttle ourselves
+];
+
 export class ProcessManager {
   
   async getProcessList(): Promise<any[]> {
@@ -14,10 +20,15 @@ export class ProcessManager {
           // Parse CSV line: "Image Name","PID","Session Name","Session#","Mem Usage"
           const parts = line.match(/"([^"]*)"/g)?.map(p => p.replace(/"/g, ''));
           if (!parts) return null;
+          
+          // Parse memory string like "123,456 K" -> 123456
+          const memString = parts[4].replace(/[, K]/g, '');
+          const memoryKb = parseInt(memString, 10);
+
           return {
             name: parts[0],
             pid: parseInt(parts[1], 10),
-            memory: parts[4]
+            memoryKb: isNaN(memoryKb) ? 0 : memoryKb
           };
         })
         .filter(p => p !== null);
@@ -34,11 +45,22 @@ export class ProcessManager {
 
   async setHighPriority(pid: number): Promise<boolean> {
     try {
-      // PowerShell is cleaner for this than wmic
-      await execAsync(`powershell -Command "Get-Process -Id ${pid} | ForEach-Object { $_.PriorityClass = 'High' }"`);
+      // Priority Class: 128 (High), 32 (Normal), 64 (Idle/Low)
+      await execAsync(`powershell -Command "$process = Get-Process -Id ${pid}; $process.PriorityClass = 'High'"`);
       return true;
     } catch (error) {
       console.error(`Failed to set priority for PID ${pid}:`, error);
+      return false;
+    }
+  }
+
+  async setLowPriority(pid: number): Promise<boolean> {
+    try {
+      // Set to Idle (64) to yield CPU to the game
+      await execAsync(`powershell -Command "$process = Get-Process -Id ${pid} -ErrorAction SilentlyContinue; if ($process) { $process.PriorityClass = 'Idle' }"`);
+      return true;
+    } catch (error) {
+      // Ignore errors for processes that might have closed or are protected
       return false;
     }
   }
@@ -54,8 +76,9 @@ export class ProcessManager {
   }
 
   /**
-   * Simple optimization: Clear standby list (requires admin, so maybe just simulated or standard cleanup)
-   * and potentially close common resource hogs if configured.
+   * Advanced Optimization:
+   * 1. Boost Game Priority
+   * 2. Throttle (Low Priority) heavy background apps instead of killing them
    */
   async optimizeSystem(targetGamePid?: number): Promise<string[]> {
     const actionsTaken: string[] = [];
@@ -63,13 +86,27 @@ export class ProcessManager {
     // 1. Set High Priority for the game
     if (targetGamePid) {
       const success = await this.setHighPriority(targetGamePid);
-      if (success) actionsTaken.push(`Set Priority High for PID ${targetGamePid}`);
+      if (success) actionsTaken.push(`🚀 Boosted Game (PID ${targetGamePid}) to HIGH priority`);
     }
 
-    // 2. Close known non-essential hogs (Example list - strictly opt-in in real app)
-    // For safety in this demo, we won't actually kill Chrome/Spotify without user config.
-    // We'll just log what we WOULD do.
-    // actionsTaken.push("Analyzed background processes");
+    // 2. Find and Throttle Heavy Background Processes (>300MB RAM)
+    try {
+      const processes = await this.getProcessList();
+      const heavyProcesses = processes.filter(p => 
+        p.pid !== targetGamePid && // Don't throttle the game
+        p.memoryKb > 300000 && // > 300MB
+        !SYSTEM_SAFELIST.includes(p.name.toLowerCase()) // Not system critical
+      );
+
+      for (const proc of heavyProcesses) {
+        const throttled = await this.setLowPriority(proc.pid);
+        if (throttled) {
+          actionsTaken.push(`⬇️ Throttled background app: ${proc.name} (${Math.round(proc.memoryKb/1024)}MB)`);
+        }
+      }
+    } catch (e) {
+      console.error("Error optimizing background processes:", e);
+    }
 
     return actionsTaken;
   }

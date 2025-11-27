@@ -1,5 +1,5 @@
 import React from 'react';
-import { X, Play, Clock, Calendar, HardDrive, Tag, EyeOff, Eye, Heart, Terminal, Bookmark, Star, FileText } from 'lucide-react';
+import { X, Play, Clock, Calendar, HardDrive, Tag, EyeOff, Eye, Heart, Terminal, Bookmark, Star, FileText, Download } from 'lucide-react';
 import { Game } from '../types';
 import { getPlatformIcon } from '../data/LauncherData';
 import { useGameStore } from '../stores/gameStore';
@@ -11,7 +11,7 @@ interface GameDetailsModalProps {
 }
 
 const GameDetailsModal: React.FC<GameDetailsModalProps> = ({ game, onClose, onPlay }) => {
-    const { toggleHidden, toggleFavorite, updateTags, updateLaunchOptions, updatePlayStatus, updateRating, updateUserNotes } = useGameStore();
+    const { toggleHidden, toggleFavorite, updateTags, updateLaunchOptions, updatePlayStatus, updateRating, updateUserNotes, installGame } = useGameStore();
     const [isEditingTags, setIsEditingTags] = React.useState(false);
     const [newTag, setNewTag] = React.useState('');
     const [launchOptions, setLaunchOptions] = React.useState(game.launchOptions || '');
@@ -78,13 +78,23 @@ const GameDetailsModal: React.FC<GameDetailsModalProps> = ({ game, onClose, onPl
                             <h1 className="text-4xl md:text-5xl font-black text-white mb-6 drop-shadow-lg leading-tight">{game.title}</h1>
                             
                             <div className="flex items-center gap-4">
-                                <button 
-                                    onClick={onPlay}
-                                    className="bg-white text-black hover:bg-gray-200 px-8 py-3 rounded-full font-bold text-lg flex items-center gap-2 transition-all hover:scale-105 shadow-[0_0_20px_rgba(255,255,255,0.3)]"
-                                >
-                                    <Play size={20} fill="currentColor" />
-                                    Play Now
-                                </button>
+                                {game.status === 'installed' ? (
+                                    <button 
+                                        onClick={onPlay}
+                                        className="bg-white text-black hover:bg-gray-200 px-8 py-3 rounded-full font-bold text-lg flex items-center gap-2 transition-all hover:scale-105 shadow-[0_0_20px_rgba(255,255,255,0.3)]"
+                                    >
+                                        <Play size={20} fill="currentColor" />
+                                        Play Now
+                                    </button>
+                                ) : (
+                                    <button 
+                                        onClick={() => installGame(game.id)}
+                                        className="bg-blue-600 text-white hover:bg-blue-500 px-8 py-3 rounded-full font-bold text-lg flex items-center gap-2 transition-all hover:scale-105 shadow-[0_0_20px_rgba(37,99,235,0.3)]"
+                                    >
+                                        <Download size={20} />
+                                        Install
+                                    </button>
+                                )}
                                 
                                 <button
                                     onClick={() => toggleFavorite(game.id, !game.isFavorite)}

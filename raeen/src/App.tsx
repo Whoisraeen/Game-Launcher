@@ -6,6 +6,8 @@ import { useSettingsStore } from './stores/settingsStore';
 import { useGameStore } from './stores/gameStore';
 import { NavigationProvider } from './context/NavigationContext';
 import BigPictureLayout from './components/BigPicture/BigPictureLayout';
+import { useGamepad } from './hooks/useGamepad';
+import { useTheme } from './hooks/useTheme';
 
 // Pages
 import Library from './components/pages/Library';
@@ -23,11 +25,22 @@ function App() {
   const [isBigPicture, setIsBigPicture] = useState(false);
   const { loadSettings } = useSettingsStore();
   const { loadGames } = useGameStore();
+  
+  useTheme();
 
   useEffect(() => {
     loadSettings();
     loadGames();
   }, []);
+
+  // Global Gamepad Listener for Guide Button (Home)
+  useGamepad({
+    onButtonDown: (btn) => {
+      if (btn === 'Home') {
+        setIsBigPicture(prev => !prev);
+      }
+    }
+  });
 
   const handleMinimize = () => {
     window.ipcRenderer.minimizeWindow()
@@ -59,7 +72,7 @@ function App() {
       {isBigPicture ? (
         <BigPictureLayout onExit={() => setIsBigPicture(false)} />
       ) : (
-        <div className="flex flex-col h-screen w-screen bg-slate-900 text-white overflow-hidden selection:bg-purple-500 selection:text-white font-sans relative">
+        <div className="flex flex-col h-screen w-screen bg-[var(--bg-primary)] text-[var(--text-primary)] overflow-hidden selection:bg-[var(--accent)] selection:text-white font-sans relative transition-colors duration-500">
 
           {/* Background */}
           <div className="absolute inset-0 z-0">
@@ -68,19 +81,19 @@ function App() {
               alt="Background"
               className="absolute inset-0 w-full h-full object-cover opacity-20 blur-3xl scale-110"
             />
-            <div className="absolute inset-0 bg-gradient-to-t from-slate-900 via-slate-900/80 to-slate-900/40" />
+            <div className="absolute inset-0 bg-gradient-to-t from-[var(--bg-primary)] via-[var(--bg-primary)]/80 to-[var(--bg-primary)]/40" />
           </div>
 
           {/* Top Bar */}
-          <div className="relative z-50 h-10 flex items-center justify-between px-4 border-b border-white/5 bg-slate-900/30 backdrop-blur-md drag-region">
+          <div className="relative z-50 h-10 flex items-center justify-between px-4 border-b border-white/5 bg-[var(--glass-bg)] backdrop-blur-md drag-region">
             <div className="flex items-center gap-2">
-              <Ghost size={16} className="text-purple-500" />
+              <Ghost size={16} className="text-[var(--accent)]" />
               <span className="text-xs font-bold tracking-widest text-gray-300">RAEEN LAUNCHER</span>
             </div>
             <div className="flex items-center gap-4 no-drag">
               <button 
                 onClick={() => setIsBigPicture(true)}
-                className="p-1 hover:text-purple-400 transition-colors text-gray-400"
+                className="p-1 hover:text-[var(--accent)] transition-colors text-gray-400"
                 title="Enter Big Picture Mode"
               >
                 <MonitorPlay size={16} />

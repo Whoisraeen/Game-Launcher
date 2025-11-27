@@ -12,7 +12,12 @@ interface GameState {
     selectedCollectionId: string | null;
     setSelectedCollectionId: (id: string | null) => void;
     syncLibrary: () => Promise<void>;
-    loadGames: () => Promise<void>;
+    page: number;
+    pageSize: number;
+    hasMore: boolean;
+    totalGames: number;
+    loadMoreGames: () => Promise<void>;
+    loadGames: (reset?: boolean) => Promise<void>;
     loadRecommendations: () => Promise<void>;
     loadCollections: () => Promise<void>;
     createCollection: (name: string, description?: string) => Promise<void>;
@@ -48,6 +53,10 @@ interface GameState {
 
 export const useGameStore = create<GameState>((set, get) => ({
     games: [],
+    page: 1,
+    pageSize: 50,
+    hasMore: true,
+    totalGames: 0,
     recommendations: [],
     collections: [],
     weeklyActivity: [],
@@ -113,18 +122,31 @@ export const useGameStore = create<GameState>((set, get) => ({
                 logo: g.logo_url
             }));
 
-            set({ games: mappedGames, isLoading: false });
+            set({
+                games: mappedGames,
+                isLoading: false,
+                page: 1,
+                hasMore: false, // Sync loads everything
+                totalGames: mappedGames.length
+            });
         } catch (error) {
             set({ error: (error as Error).message, isLoading: false });
         }
     },
 
-    loadGames: async () => {
+    loadGames: async (reset = false) => {
         set({ isLoading: true, error: null });
-        try {
-            const result = await window.ipcRenderer.invoke('games:getAll');
+        if (reset) {
+            set({ page: 1, games: [], hasMore: true });
+        }
 
-            const mappedGames: Game[] = result.map((g: any) => ({
+        const { page, pageSize } = get();
+
+        try {
+            const result = await window.ipcRenderer.invoke('games:getPage', reset ? 1 : page, pageSize);
+            const { games: newGamesRaw, total } = result;
+
+            const mappedGames: Game[] = newGamesRaw.map((g: any) => ({
                 id: g.id,
                 title: g.title,
                 cover: g.cover_url,
@@ -151,10 +173,22 @@ export const useGameStore = create<GameState>((set, get) => ({
                 logo: g.logo_url
             }));
 
-            set({ games: mappedGames, isLoading: false });
+            set(state => ({
+                games: reset ? mappedGames : [...state.games, ...mappedGames],
+                isLoading: false,
+                totalGames: total,
+                hasMore: (reset ? mappedGames.length : state.games.length + mappedGames.length) < total,
+                page: (reset ? 1 : state.page) + 1
+            }));
         } catch (error) {
             set({ error: (error as Error).message, isLoading: false });
         }
+    },
+
+    loadMoreGames: async () => {
+        const { hasMore, isLoading } = get();
+        if (!hasMore || isLoading) return;
+        await get().loadGames(false);
     },
 
     loadRecommendations: async () => {
