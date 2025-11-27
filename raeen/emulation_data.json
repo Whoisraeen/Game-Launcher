@@ -1,0 +1,63 @@
+{
+  "emulators": [
+    {
+      "id": "0a9bba97-8668-4f43-b568-241f81f14c21",
+      "name": "RetroArch",
+      "executable": "C:\\RetroArch\\retroarch.exe",
+      "arguments": "-L {core} {rom}",
+      "platforms": [
+        "nes",
+        "snes",
+        "gba",
+        "n64",
+        "ps1"
+      ]
+    },
+    {
+      "id": "c1be1266-5cab-4157-85a0-6419c80275f8",
+      "name": "Dolphin",
+      "executable": "C:\\Dolphin\\Dolphin.exe",
+      "arguments": "-b -e {rom}",
+      "platforms": [
+        "gc",
+        "wii"
+      ]
+    },
+    {
+      "id": "45bab2ce-e948-49d7-8c4f-3cb76c8f69e9",
+      "name": "Test Emulator",
+      "executable": "C:\\Emulators\\TestEmu.exe",
+      "arguments": "-rom {rom}",
+      "platforms": [
+        "snes"
+      ]
+    },
+    {
+      "id": "c1354d52-8564-4b87-b4db-2e74b86d965e",
+      "name": "Test Emulator",
+      "executable": "C:\\Emulators\\TestEmu.exe",
+      "arguments": "-rom {rom}",
+      "platforms": [
+        "snes"
+      ]
+    }
+  ],
+  "games": [
+    {
+      "id": "771a7f7a-d224-43c3-a10f-eb6687a0d2d2",
+      "title": "Test Emulated Game",
+      "romPath": "C:\\ROMS\\snes\\game.sfc",
+      "platform": "snes",
+      "emulatorId": "45bab2ce-e948-49d7-8c4f-3cb76c8f69e9",
+      "addedAt": 1764273517123
+    },
+    {
+      "id": "45be541a-4991-4f50-b6a8-fb228dcb08bd",
+      "title": "Test Emulated Game",
+      "romPath": "C:\\ROMS\\snes\\game.sfc",
+      "platform": "snes",
+      "emulatorId": "c1354d52-8564-4b87-b4db-2e74b86d965e",
+      "addedAt": 1764273560501
+    }
+  ]
+}
