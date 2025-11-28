@@ -13,6 +13,11 @@ import { NewsManager } from './services/newsManager'
 import { RecommendationManager } from './services/recommendationManager'
 import { ImageCacheService } from './services/ImageCacheService'
 import { ManualGameService } from './services/ManualGameService'
+import { DiscordManager } from './services/discordManager'
+import { PerformanceService } from './services/PerformanceService'
+import { SaveManagerService } from './services/SaveManagerService'
+import { VideoEditorService } from './services/VideoEditorService'
+import { ObsService } from './services/ObsService'
 
 // Configure Logger
 log.initialize();
@@ -37,6 +42,10 @@ let newsManager: NewsManager;
 let recommendationManager: RecommendationManager;
 let imageCacheService: ImageCacheService;
 let manualGameService: ManualGameService;
+let performanceService: PerformanceService;
+let saveManagerService: SaveManagerService;
+let videoEditorService: VideoEditorService;
+let obsService: ObsService;
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -49,6 +58,73 @@ export const RENDERER_DIST = path.join(process.env.APP_ROOT, 'dist')
 process.env.VITE_PUBLIC = VITE_DEV_SERVER_URL ? path.join(process.env.APP_ROOT, 'public') : RENDERER_DIST
 
 let win: BrowserWindow | null
+let overlayWin: BrowserWindow | null
+
+function createOverlayWindow() {
+  overlayWin = new BrowserWindow({
+    width: 300,
+    height: 150,
+    x: 20,
+    y: 20,
+    frame: false,
+    transparent: true,
+    alwaysOnTop: true,
+    focusable: false, // Click-through
+    resizable: false,
+    skipTaskbar: true,
+    hasShadow: false,
+    show: false, // Hidden by default
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+    }
+  });
+
+  // Allow click-through
+  overlayWin.setIgnoreMouseEvents(true);
+
+  if (VITE_DEV_SERVER_URL) {
+    overlayWin.loadURL(`${VITE_DEV_SERVER_URL}#/overlay`);
+  } else {
+    overlayWin.loadFile(path.join(RENDERER_DIST, 'index.html'), { hash: 'overlay' });
+  }
+
+  overlayWin.on('closed', () => {
+    overlayWin = null;
+  });
+}
+
+let overlayInterval: NodeJS.Timeout | null = null;
+
+function startOverlayUpdates() {
+    if (overlayInterval) return;
+    
+    // Send initial update immediately
+    hardwareMonitor.getStats().then(stats => {
+        overlayWin?.webContents.send('overlay:update', stats);
+    });
+
+    overlayInterval = setInterval(async () => {
+        if (overlayWin && overlayWin.isVisible()) {
+            try {
+                const stats = await hardwareMonitor.getStats();
+                overlayWin.webContents.send('overlay:update', stats);
+            } catch (e) {
+                console.error('Failed to update overlay stats:', e);
+            }
+        } else {
+            stopOverlayUpdates();
+        }
+    }, 2000); // Update every 2 seconds
+}
+
+function stopOverlayUpdates() {
+    if (overlayInterval) {
+        clearInterval(overlayInterval);
+        overlayInterval = null;
+    }
+}
 
 function createWindow() {
   win = new BrowserWindow({
@@ -64,11 +140,14 @@ function createWindow() {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false // Required for some file system operations if not using full context bridge, but we should aim for true sandbox eventually.
+      sandbox: false
     },
   })
 
-  // Window control IPC handlers
+  createOverlayWindow(); // Create overlay when main window is created
+
+  // ... rest of window code ...
+
   ipcMain.on('minimize-window', () => {
     win?.minimize()
   })
@@ -119,6 +198,16 @@ function createWindow() {
       return recommendationManager.getRecommendations(games);
     } catch (error) {
       console.error('Failed to get recommendations:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle('games:getSmartSuggestion', (_, criteria: 'backlog' | 'replay' | 'quick' | 'forgotten' | 'random', maxMinutes?: number) => {
+    try {
+      const games = gameManager.getAllGames() as any[];
+      return recommendationManager.getSmartSuggestion(games, criteria, maxMinutes);
+    } catch (error) {
+      console.error('Failed to get smart suggestion:', error);
       throw error;
     }
   });
@@ -402,6 +491,15 @@ function createWindow() {
     }
   });
 
+  ipcMain.handle('friends:sync', async () => {
+    try {
+      return await friendsManager.syncSteamFriendsRealTime();
+    } catch (error) {
+      console.error('Failed to sync Steam friends:', error);
+      throw error;
+    }
+  });
+
   ipcMain.handle('friends:simulate', () => {
     return friendsManager.simulateActivity();
   });
@@ -430,6 +528,10 @@ function createWindow() {
     }
     // Update DB record
     return universalModManager.updateMod(id, updates);
+  });
+
+  ipcMain.handle('mods:checkConflicts', (_, gameId: string) => {
+    return universalModManager.checkConflicts(gameId);
   });
 
   // News IPC Handlers
@@ -508,6 +610,118 @@ app.whenReady().then(() => {
   recommendationManager = new RecommendationManager()
   imageCacheService = new ImageCacheService()
   manualGameService = new ManualGameService() // Instantiate ManualGameService
+  performanceService = new PerformanceService()
+  saveManagerService = new SaveManagerService()
+  videoEditorService = new VideoEditorService()
+  obsService = new ObsService()
+
+  // OBS IPC
+  ipcMain.handle('obs:setConnectionConfig', (_, config: ObsConnectionConfig) => {
+    obsService.setConnectionConfig(config);
+  });
+
+  ipcMain.handle('obs:getConnectionConfig', () => {
+    return obsService.getConnectionConfig();
+  });
+
+  ipcMain.handle('obs:connect', () => {
+    return obsService.connect();
+  });
+
+  ipcMain.handle('obs:disconnect', () => {
+    return obsService.disconnect();
+  });
+
+  ipcMain.handle('obs:isConnected', () => {
+    return obsService.isObsConnected();
+  });
+
+  ipcMain.handle('obs:getSceneList', () => {
+    return obsService.getSceneList();
+  });
+
+  ipcMain.handle('obs:setCurrentScene', (_, sceneName: string) => {
+    return obsService.setCurrentScene(sceneName);
+  });
+
+  ipcMain.handle('obs:getStreamStatus', () => {
+    return obsService.getStreamStatus();
+  });
+
+  ipcMain.handle('obs:startStreaming', () => {
+    return obsService.startStreaming();
+  });
+
+  ipcMain.handle('obs:stopStreaming', () => {
+    return obsService.stopStreaming();
+  });
+
+  ipcMain.handle('obs:startRecording', () => {
+    return obsService.startRecording();
+  });
+
+  ipcMain.handle('obs:stopRecording', () => {
+    return obsService.stopRecording();
+  });
+
+  // Video Editor IPC
+  ipcMain.handle('video:metadata', async (_, videoPath: string) => {
+    try {
+      return await videoEditorService.getVideoMetadata(videoPath);
+    } catch (error) {
+      console.error('Failed to get video metadata:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle('video:cut', async (_, inputPath: string, outputPath: string, startTime: number, durationOrEndTime: number, useEndTime: boolean) => {
+    try {
+      return await videoEditorService.cutVideo(inputPath, outputPath, startTime, durationOrEndTime, useEndTime);
+    } catch (error) {
+      console.error('Failed to cut video:', error);
+      throw error;
+    }
+  });
+
+  // Save Manager IPC
+  ipcMain.handle('saves:getConfig', () => {
+    return {
+      configs: saveManagerService.getConfigs(),
+      cloudPath: saveManagerService.getCloudPath()
+    };
+  });
+
+  ipcMain.handle('saves:setConfig', (_, cloudPath: string) => {
+    return saveManagerService.setCloudPath(cloudPath);
+  });
+
+  ipcMain.handle('saves:watch', (_, gameId: string, path: string) => {
+    return saveManagerService.addGamePath(gameId, path);
+  });
+
+  ipcMain.handle('saves:unwatch', (_, gameId: string) => {
+    return saveManagerService.removeGamePath(gameId);
+  });
+
+  ipcMain.handle('saves:backup', (_, gameId: string) => {
+    return saveManagerService.createBackup(gameId, false);
+  });
+
+  ipcMain.handle('saves:getHistory', (_, gameId: string) => {
+    return saveManagerService.getBackups(gameId);
+  });
+
+  ipcMain.handle('saves:restore', (_, backupPath: string, targetPath: string) => {
+    return saveManagerService.restoreBackup(backupPath, targetPath);
+  });
+
+  ipcMain.handle('saves:detect', (_, title: string, developer?: string) => {
+    return saveManagerService.detectSavePath(title, developer);
+  });
+
+  ipcMain.handle('saves:getSize', (_, gameId: string) => {
+    return saveManagerService.getTotalBackupSize(gameId);
+  });
 
   // Image Cache IPC
   ipcMain.handle('images:cache', async (_, url: string) => {
@@ -517,12 +731,58 @@ app.whenReady().then(() => {
       // For a list of 2000 games, this might be too slow if we do it for all.
       // But for the visible ones (virtualized), it's fine.
       // Actually cacheImage was the name in ImageCacheService.ts
-      return await imageCacheService.cacheImage(url, 'temp_' + Date.now(), 'cover'); 
+      return await imageCacheService.cacheImage(url, 'temp_' + Date.now(), 'cover');
       // Note: This is a simplified wrapper for ad-hoc caching if needed by UI directly.
       // Real usage is in GameManager.syncLibrary.
     } catch (error) {
       console.error('Failed to cache image:', error);
       return url; // Fallback to original
+    }
+  });
+
+  // File System IPC (For INI Editor)
+  ipcMain.handle('fs:readText', async (_, filePath: string) => {
+      const fs = await import('fs');
+      if (!fs.existsSync(filePath)) throw new Error('File not found');
+      return fs.readFileSync(filePath, 'utf-8');
+  });
+
+  ipcMain.handle('fs:writeText', async (_, filePath: string, content: string) => {
+      const fs = await import('fs');
+      // Backup first
+      if (fs.existsSync(filePath)) {
+          fs.copyFileSync(filePath, `${filePath}.bak`);
+      }
+      fs.writeFileSync(filePath, content, 'utf-8');
+      return true;
+  });
+
+  // Emulation Auto-Detect
+  ipcMain.handle('emulators:autoDetect', async () => {
+    try {
+      await gameManager.autoDetectEmulators();
+      return gameManager.getEmulators();
+    } catch (error) {
+      console.error('Failed to auto-detect emulators:', error);
+      throw error;
+    }
+  });
+
+  // Metadata Search
+  ipcMain.handle('metadata:search', async (_, title: string) => {
+    try {
+      // Accessing metadataFetcher through gameManager is not ideal as it's private.
+      // We should probably expose it or instantiate it here, but GameManager has it.
+      // Better to add a method to GameManager to expose this or just make it public.
+      // Since I can't easily change GameManager to public property without re-reading/writing,
+      // I will use the `gameManager` instance and assume I can access it if I cast or modify GameManager.
+      // Or simpler: Just use the new MetadataFetcher instance since it's stateless mostly (except cache which it doesn't have much of).
+      // Actually, GameManager has logic for it.
+      // Let's add a method to GameManager to `searchMetadata(title)` which calls the fetcher.
+      return await gameManager.searchMetadata(title);
+    } catch (error) {
+      console.error('Failed to search metadata:', error);
+      throw error;
     }
   });
 

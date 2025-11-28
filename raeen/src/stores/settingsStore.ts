@@ -2,26 +2,34 @@ import { create } from 'zustand';
 
 // Duplicate of the interface from backend to avoid importing from electron folder
 // In a real monorepo, this would be in a shared package
-export interface UserSettings {
-  general: {
-    launchOnStartup: boolean;
-    startMinimized: boolean;
-    autoDetectGames: boolean;
-  };
-  appearance: {
-    theme: 'dark' | 'light' | 'cyberpunk' | 'midnight';
-    enableTransparency: boolean;
-    animatedBackgrounds: boolean;
-  };
-  gameManagement: {
-    closeOnLaunch: boolean;
-    cloudSync: boolean;
-  };
-  account: {
-    username: string;
-    avatar: string;
-    status: 'online' | 'offline' | 'playing' | 'away';
-  };
+interface UserSettings {
+    general: {
+        launchOnStartup: boolean;
+        startMinimized: boolean;
+        autoDetectGames: boolean;
+    };
+    appearance: {
+        theme: 'dark' | 'light' | 'cyberpunk' | 'midnight';
+        enableTransparency: boolean;
+        animatedBackgrounds: boolean;
+    };
+    gameManagement: {
+        closeOnLaunch: boolean;
+        cloudSync: boolean; // For save games
+    };
+    account: {
+        username: string;
+        avatar: string;
+        status: 'online' | 'away' | 'offline' | 'playing';
+    };
+    integrations: {
+        steamApiKey: string;
+        steamId: string;
+    };
+    obs: {
+        address: string;
+        password?: string;
+    };
 }
 
 interface SettingsState {

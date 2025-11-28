@@ -9,6 +9,7 @@ interface FriendState {
     addFriend: (username: string, platform?: string) => Promise<void>;
     removeFriend: (id: string) => Promise<void>;
     importSteamFriends: () => Promise<void>;
+    syncFriends: () => Promise<void>;
     simulateActivity: () => Promise<void>;
 }
 
@@ -55,6 +56,19 @@ export const useFriendStore = create<FriendState>((set) => ({
             }));
         } catch (error) {
             console.error('Failed to import Steam friends:', error);
+            set({ isLoading: false });
+        }
+    },
+
+    syncFriends: async () => {
+        set({ isLoading: true });
+        try {
+            await window.ipcRenderer.invoke('friends:sync');
+            // Reload all friends to get the latest state including manual ones
+            const result = await window.ipcRenderer.invoke('friends:getAll');
+            set({ friends: result, isLoading: false });
+        } catch (error) {
+            console.error('Failed to sync friends:', error);
             set({ isLoading: false });
         }
     },

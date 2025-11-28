@@ -90,6 +90,79 @@ export class MetadataFetcher {
         return null;
     }
 
+    /**
+     * Searches for metadata and returns multiple candidates.
+     * Useful for the "Metadata Wizard" or manual matching.
+     */
+    async searchMetadata(title: string): Promise<GameMetadata[]> {
+        console.log(`Searching metadata candidates for: ${title}`);
+        const candidates: GameMetadata[] = [];
+
+        // 1. Search IGDB
+        try {
+            if (IGDB_CLIENT_ID !== 'YOUR_CLIENT_ID') {
+                const headers = await this.getIgdbHeaders();
+                // Fetch top 5 results
+                const body = `
+                    search "${title}";
+                    fields name, summary, cover.url, artworks.url, rating, first_release_date, involved_companies.company.name, genres.name;
+                    limit 5;
+                `;
+                const response = await axios.post('https://api.igdb.com/v4/games', body, { headers });
+                
+                if (response.data && Array.isArray(response.data)) {
+                    response.data.forEach((game: any) => {
+                        const coverUrl = game.cover?.url ? `https:${game.cover.url.replace('t_thumb', 't_cover_big')}` : undefined;
+                        const heroUrl = game.artworks?.[0]?.url ? `https:${game.artworks[0].url.replace('t_thumb', 't_1080p')}` : undefined;
+                        
+                        candidates.push({
+                            cover: coverUrl,
+                            hero: heroUrl,
+                            description: game.summary,
+                            rating: game.rating ? game.rating / 20 : 0,
+                            releaseDate: game.first_release_date ? new Date(game.first_release_date * 1000).toLocaleDateString() : undefined,
+                            genres: game.genres ? game.genres.map((g: any) => g.name) : [],
+                            developer: game.involved_companies?.[0]?.company?.name,
+                        });
+                    });
+                }
+            }
+        } catch (e) {
+            console.error('IGDB search failed:', e);
+        }
+
+        // 2. Search Steam
+        try {
+            const url = `https://store.steampowered.com/api/storesearch/?term=${encodeURIComponent(title)}&l=english&cc=US`;
+            const response = await axios.get(url);
+
+            if (response.data && response.data.items) {
+                // Take top 3 Steam results
+                const items = response.data.items.slice(0, 3);
+                for (const item of items) {
+                    // We can push basic info, or fetch details asynchronously
+                    // For speed, we push basic info and maybe fetch details only if selected?
+                    // But we need the description/genres to be useful. 
+                    // Let's just construct basic metadata from search result + standard asset paths
+                    
+                    candidates.push({
+                        cover: `https://cdn.cloudflare.steamstatic.com/steam/apps/${item.id}/library_600x900.jpg`,
+                        hero: `https://cdn.cloudflare.steamstatic.com/steam/apps/${item.id}/library_hero.jpg`,
+                        logo: `https://cdn.cloudflare.steamstatic.com/steam/apps/${item.id}/logo.png`,
+                        description: `Steam App ID: ${item.id}`, // Placeholder until detailed fetch
+                        releaseDate: undefined,
+                        genres: [],
+                        achievementsTotal: 0,
+                    });
+                }
+            }
+        } catch (e) {
+            console.error('Steam search failed:', e);
+        }
+
+        return candidates;
+    }
+
     async fetchGameNews(appId: string, count: number = 3): Promise<any[]> {
         // ... (Steam news logic remains same)
         try {

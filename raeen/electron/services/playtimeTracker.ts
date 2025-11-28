@@ -1,6 +1,7 @@
 import { ProcessManager } from './processManager';
 import { getDb } from '../database';
 import path from 'path';
+import { DiscordManager } from './discordManager';
 
 export class PlaytimeTracker {
   private processManager: ProcessManager;
@@ -49,6 +50,9 @@ export class PlaytimeTracker {
     this.sessionId = null;
     this.startTime = 0;
     this.lastUpdateTime = 0;
+
+    // Reset Discord Activity
+    DiscordManager.getInstance().setIdle();
   }
 
   private async updatePlaytime() {

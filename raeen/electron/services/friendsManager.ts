@@ -2,6 +2,8 @@ import { getDb } from '../database';
 import { v4 as uuidv4 } from 'uuid';
 import fs from 'fs';
 import path from 'path';
+import axios from 'axios';
+import { SettingsManager } from './settingsManager';
 
 export interface Friend {
     id: string;
@@ -92,6 +94,96 @@ export class FriendsManager {
         });
         
         return this.getAll();
+    }
+
+    async syncSteamFriendsRealTime(): Promise<Friend[]> {
+        const settingsManager = new SettingsManager();
+        const settings = settingsManager.getAllSettings();
+        const apiKey = settings.integrations?.steamApiKey;
+        const steamId = settings.integrations?.steamId;
+
+        if (!apiKey || !steamId) {
+            console.log('Steam sync skipped: Missing API Key or Steam ID');
+            return [];
+        }
+
+        try {
+            // 1. Get Friend List
+            const friendListUrl = `http://api.steampowered.com/ISteamUser/GetFriendList/v0001/?key=${apiKey}&steamid=${steamId}&relationship=friend`;
+            const friendListRes = await axios.get(friendListUrl);
+            const friends = friendListRes.data?.friendslist?.friends || [];
+
+            if (friends.length === 0) return [];
+
+            const friendIds = friends.map((f: any) => f.steamid).join(',');
+
+            // 2. Get Player Summaries (Status, Name, Avatar)
+            const summariesUrl = `http://api.steampowered.com/ISteamUser/GetPlayerSummaries/v0002/?key=${apiKey}&steamids=${friendIds}`;
+            const summariesRes = await axios.get(summariesUrl);
+            const players = summariesRes.data?.response?.players || [];
+
+            // 3. Update DB
+            const db = getDb();
+            const syncedFriends: Friend[] = [];
+
+            const insertStmt = db.prepare(`
+                INSERT INTO friends (id, username, avatar_url, status, activity, last_seen, platform, created_at)
+                VALUES (@id, @username, @avatar_url, @status, @activity, @last_seen, @platform, @created_at)
+                ON CONFLICT(id) DO UPDATE SET
+                    username = excluded.username,
+                    avatar_url = excluded.avatar_url,
+                    status = excluded.status,
+                    activity = excluded.activity,
+                    last_seen = excluded.last_seen
+            `);
+
+            for (const player of players) {
+                // Map Steam Status to our Status
+                // personastate: 0 - Offline, 1 - Online, 2 - Busy, 3 - Away, 4 - Snooze, 5 - looking to trade, 6 - looking to play
+                let status: 'online' | 'offline' | 'away' | 'playing' = 'offline';
+                if (player.gameextrainfo) {
+                    status = 'playing';
+                } else {
+                    switch (player.personastate) {
+                        case 0: status = 'offline'; break;
+                        case 1: status = 'online'; break;
+                        case 2: status = 'away'; break; // Busy -> Away
+                        case 3: status = 'away'; break;
+                        case 4: status = 'away'; break; // Snooze -> Away
+                        default: status = 'online';
+                    }
+                }
+
+                const friendData = {
+                    id: player.steamid, // Use SteamID as ID for uniqueness
+                    username: player.personaname,
+                    avatar_url: player.avatarfull,
+                    status: status,
+                    activity: player.gameextrainfo || null,
+                    last_seen: new Date(player.lastlogoff * 1000).toISOString(),
+                    platform: 'steam',
+                    created_at: Date.now()
+                };
+
+                insertStmt.run(friendData);
+                
+                syncedFriends.push({
+                    id: friendData.id,
+                    username: friendData.username,
+                    avatar: friendData.avatar_url,
+                    status: friendData.status,
+                    activity: friendData.activity || undefined,
+                    lastSeen: friendData.last_seen,
+                    platform: 'steam'
+                });
+            }
+
+            return syncedFriends;
+
+        } catch (error) {
+            console.error('Failed to sync Steam friends:', error);
+            return [];
+        }
     }
 
     async importSteamFriends(): Promise<Friend[]> {

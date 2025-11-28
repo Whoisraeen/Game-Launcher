@@ -3,6 +3,11 @@ import { v4 as uuidv4 } from 'uuid';
 import fs from 'fs';
 import path from 'path';
 
+export interface ModConflict {
+    file: string;
+    modIds: string[];
+}
+
 export class UniversalModManager {
   getMods(gameId: string) {
     const db = getDb();
@@ -18,6 +23,58 @@ export class UniversalModManager {
       LEFT JOIN games ON mods.game_id = games.id 
       ORDER BY mods.created_at DESC
     `).all();
+  }
+
+  // Check for conflicts between enabled mods for a specific game
+  // Returns list of conflicting relative file paths and the mod IDs involved
+  checkConflicts(gameId: string): ModConflict[] {
+      const db = getDb();
+      // Get all enabled mods for this game
+      const mods = db.prepare('SELECT id, install_path FROM mods WHERE game_id = ? AND enabled = 1').all(gameId) as { id: string, install_path: string }[];
+      
+      if (mods.length < 2) return [];
+
+      const fileMap = new Map<string, string[]>(); // filePath -> [modId, modId]
+
+      for (const mod of mods) {
+          if (!mod.install_path || !fs.existsSync(mod.install_path)) continue;
+          
+          // Recursive scan of mod directory
+          const scan = (dir: string, relativeDir: string = '') => {
+              const files = fs.readdirSync(dir);
+              for (const file of files) {
+                  const fullPath = path.join(dir, file);
+                  const relativePath = path.join(relativeDir, file);
+                  const stat = fs.statSync(fullPath);
+
+                  if (stat.isDirectory()) {
+                      scan(fullPath, relativePath);
+                  } else {
+                      // Track file
+                      if (!fileMap.has(relativePath)) {
+                          fileMap.set(relativePath, []);
+                      }
+                      fileMap.get(relativePath)?.push(mod.id);
+                  }
+              }
+          };
+          
+          try {
+            scan(mod.install_path);
+          } catch (e) {
+              console.warn(`Failed to scan mod ${mod.id}`, e);
+          }
+      }
+
+      // Filter for conflicts (files present in > 1 mod)
+      const conflicts: ModConflict[] = [];
+      fileMap.forEach((modIds, file) => {
+          if (modIds.length > 1) {
+              conflicts.push({ file, modIds });
+          }
+      });
+
+      return conflicts;
   }
 
   addMod(gameId: string, name: string, description: string = '', version: string = '', installPath: string = '') {

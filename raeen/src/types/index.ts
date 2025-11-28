@@ -24,6 +24,12 @@ export interface Game {
     launchOptions?: string;
     rating?: number;
     userNotes?: string;
+    mood?: string;
+    multiplayer?: {
+        local: boolean;
+        online: boolean;
+        coop: boolean;
+    };
 }
 
 export interface Collection {

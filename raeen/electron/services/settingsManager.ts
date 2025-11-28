@@ -20,6 +20,14 @@ export interface UserSettings {
     avatar: string;
     status: 'online' | 'offline' | 'playing' | 'away';
   };
+  integrations: {
+    steamApiKey: string;
+    steamId: string;
+  };
+  obs: {
+    address: string;
+    password?: string;
+  };
 }
 
 const DEFAULT_SETTINGS: UserSettings = {
@@ -41,6 +49,14 @@ const DEFAULT_SETTINGS: UserSettings = {
     username: 'Guest',
     avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Guest',
     status: 'online',
+  },
+  integrations: {
+    steamApiKey: '',
+    steamId: '',
+  },
+  obs: {
+    address: 'localhost:4444',
+    password: '',
   },
 };
 

@@ -10,15 +10,100 @@ export interface Game {
     platform: string;
     cover?: string;
     hero?: string;
+    isInstalled?: boolean;
+    isHidden?: boolean;
+    addedAt?: number;
 }
 
 export class RecommendationManager {
+
+    /**
+     * Returns a "Smart Random" game based on a specific criteria/mood.
+     */
+    getSmartSuggestion(games: Game[], criteria: 'backlog' | 'replay' | 'quick' | 'forgotten' | 'random', maxMinutes?: number): Game | null {
+        const parsedGames = this.parseGames(games);
+        let candidates: Game[] = [];
+
+        // Helper to check if game fits time constraint
+        // Without real HowLongToBeat data, we use genres as a proxy for "quick" sessions (< 30-60 mins)
+        // or check if it's a game the user plays in short bursts (avg session duration - if we had it per game)
+        // For now, we'll use the Genre proxy for strict time limits.
+        const fitsTime = (g: Game) => {
+            if (!maxMinutes) return true;
+            if (maxMinutes >= 120) return true; // unlimited essentially
+
+            const quickGenres = ['Arcade', 'Fighting', 'Racing', 'Platformer', 'Shooter', 'Sports', 'Indie', 'Puzzle'];
+            const isQuickGenre = g.genre && quickGenres.some(q => g.genre?.includes(q));
+            const isRoguelike = (g.tags as string[]).some(t => t.toLowerCase().includes('roguelike'));
+
+            return isQuickGenre || isRoguelike;
+        };
+
+        switch (criteria) {
+            case 'backlog':
+                // Installed, < 2 hours played, not hidden/completed
+                candidates = parsedGames.filter(g => 
+                    g.isInstalled && 
+                    !g.isHidden && 
+                    (g.playtime || 0) < 120 && // < 2 hours
+                    g.playStatus !== 'completed' && 
+                    g.playStatus !== 'dropped' &&
+                    fitsTime(g)
+                );
+                break;
+            
+            case 'replay':
+                // High playtime or high rating, but not played recently
+                const threeMonthsAgo = Date.now() - (90 * 24 * 60 * 60 * 1000);
+                candidates = parsedGames.filter(g => 
+                    g.isInstalled && 
+                    !g.isHidden && 
+                    ((g.playtime || 0) > 600 || (g.rating || 0) >= 4) && // > 10 hours or highly rated
+                    (!g.lastPlayed || g.lastPlayed < threeMonthsAgo) &&
+                    fitsTime(g)
+                );
+                break;
+
+            case 'quick':
+                // "Pick up and play" genres (Arcade, Fighting, Racing, Platformer)
+                // Or manually tagged "quick"
+                const quickGenres = ['Arcade', 'Fighting', 'Racing', 'Platformer', 'Shooter', 'Sports', 'Indie'];
+                candidates = parsedGames.filter(g => 
+                    g.isInstalled && 
+                    !g.isHidden &&
+                    (
+                        (g.genre && quickGenres.some(q => g.genre?.includes(q))) ||
+                        ((g.tags as string[]).some(t => t.toLowerCase().includes('roguelike') || t.toLowerCase().includes('quick')))
+                    )
+                );
+                break;
+
+            case 'forgotten':
+                // Added long ago (> 6 months), never played
+                const sixMonthsAgo = Date.now() - (180 * 24 * 60 * 60 * 1000);
+                candidates = parsedGames.filter(g => 
+                    g.isInstalled && 
+                    !g.isHidden && 
+                    (g.playtime || 0) < 10 && // Almost zero playtime
+                    (g.addedAt || 0) < sixMonthsAgo &&
+                    fitsTime(g)
+                );
+                break;
+
+            case 'random':
+            default:
+                candidates = parsedGames.filter(g => g.isInstalled && !g.isHidden && fitsTime(g));
+                break;
+        }
+
+        if (candidates.length === 0) return null;
+        
+        // Return random from candidates
+        return candidates[Math.floor(Math.random() * candidates.length)];
+    }
+
     getRecommendations(games: Game[]): Game[] {
-        // Parse tags if needed (handle string JSON from DB)
-        const parsedGames = games.map(g => ({
-            ...g,
-            tags: typeof g.tags === 'string' ? JSON.parse(g.tags || '[]') : (g.tags || [])
-        }));
+        const parsedGames = this.parseGames(games);
 
         // 1. Build User Profile (Tag & Genre Affinity)
         const tagScores = new Map<string, number>();
@@ -34,8 +119,6 @@ export class RecommendationManager {
             const timeScore = Math.min(hours, 100);
             
             // - Rating contributes significantly (0-5 stars)
-            // If rated > 3, it's a positive signal. If < 3, negative?
-            // Let's assume rating is 0 if not rated.
             const ratingScore = rating > 0 ? (rating * 20) : 0; 
 
             let score = timeScore + ratingScore;
@@ -64,7 +147,8 @@ export class RecommendationManager {
             .filter(g => {
                 const hours = (g.playtime || 0) / 60;
                 // Suggest games played less than 2 hours and not marked as completed/dropped
-                return hours < 2 && g.playStatus !== 'completed' && g.playStatus !== 'dropped';
+                // AND are installed (usually recommendations are for what to play NOW)
+                return g.isInstalled && !g.isHidden && hours < 2 && g.playStatus !== 'completed' && g.playStatus !== 'dropped';
             })
             .map(game => {
                 let score = 0;
@@ -102,5 +186,12 @@ export class RecommendationManager {
             .sort((a, b) => b.score - a.score)
             .map(item => item.game)
             .slice(0, 5);
+    }
+
+    private parseGames(games: Game[]): Game[] {
+        return games.map(g => ({
+            ...g,
+            tags: typeof g.tags === 'string' ? JSON.parse(g.tags || '[]') : (g.tags || [])
+        }));
     }
 }

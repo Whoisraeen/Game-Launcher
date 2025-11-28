@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Monitor, User, Shield, Keyboard, Bell, Volume2, Database, RefreshCw, FolderOpen } from 'lucide-react';
+import { Monitor, User, Shield, Keyboard, Bell, Volume2, Database, RefreshCw, FolderOpen, Link } from 'lucide-react';
 import { useSettingsStore, UserSettings } from '../../stores/settingsStore';
 import { useGameStore } from '../../stores/gameStore';
 
@@ -8,10 +8,31 @@ const Settings: React.FC = () => {
     const { loadGames } = useGameStore();
     const [activeSection, setActiveSection] = useState('General');
     const [isScanning, setIsScanning] = useState(false);
+    const [emulators, setEmulators] = useState<any[]>([]);
 
     useEffect(() => {
         loadSettings();
     }, []);
+
+    useEffect(() => {
+        if (activeSection === 'Emulation') {
+            loadEmulators();
+        }
+    }, [activeSection]);
+
+    const loadEmulators = async () => {
+        try {
+            // We need a get method, for now we can use autoDetect which returns list,
+            // or add a specific get ipc.
+            // Assuming autoDetect returns the list, or we can just fetch it.
+            // Let's use autoDetect for now to populate if empty, or we need a simple 'get' IPC.
+            // Re-using autoDetect is safe as it only adds new ones.
+            const list = await window.ipcRenderer.invoke('emulators:autoDetect');
+            setEmulators(list);
+        } catch (e) {
+            console.error('Failed to load emulators', e);
+        }
+    };
 
     if (isLoading || !settings) {
         return <div className="glass-panel flex-1 flex items-center justify-center">Loading settings...</div>;
@@ -34,13 +55,13 @@ const Settings: React.FC = () => {
 
             setIsScanning(true);
             const foundGames = await window.ipcRenderer.invoke('manual:scan', path);
-            
+
             let importedCount = 0;
             for (const game of foundGames) {
                 await window.ipcRenderer.invoke('manual:add', game.title, game.installPath, game.executable);
                 importedCount++;
             }
-            
+
             setIsScanning(false);
             if (importedCount > 0) {
                 alert(`Successfully imported ${importedCount} games from ${path}`);
@@ -59,47 +80,59 @@ const Settings: React.FC = () => {
         <div className="glass-panel flex-1 h-full overflow-hidden flex gap-6 p-6">
             {/* Settings Nav */}
             <div className="w-64 space-y-1">
-                <SettingsNav 
-                    icon={<Monitor size={18} />} 
-                    label="General" 
-                    active={activeSection === 'General'} 
-                    onClick={() => setActiveSection('General')} 
+                <SettingsNav
+                    icon={<Monitor size={18} />}
+                    label="General"
+                    active={activeSection === 'General'}
+                    onClick={() => setActiveSection('General')}
                 />
-                <SettingsNav 
-                    icon={<Database size={18} />} 
-                    label="Library" 
-                    active={activeSection === 'Library'} 
-                    onClick={() => setActiveSection('Library')} 
+                <SettingsNav
+                    icon={<Database size={18} />}
+                    label="Library"
+                    active={activeSection === 'Library'}
+                    onClick={() => setActiveSection('Library')}
                 />
-                <SettingsNav 
-                    icon={<User size={18} />} 
-                    label="Account" 
-                    active={activeSection === 'Account'} 
-                    onClick={() => setActiveSection('Account')} 
+                <SettingsNav
+                    icon={<User size={18} />}
+                    label="Account"
+                    active={activeSection === 'Account'}
+                    onClick={() => setActiveSection('Account')}
                 />
-                <SettingsNav 
-                    icon={<Shield size={18} />} 
-                    label="Privacy & Security" 
-                    active={activeSection === 'Privacy & Security'} 
-                    onClick={() => setActiveSection('Privacy & Security')} 
+                <SettingsNav
+                    icon={<Shield size={18} />}
+                    label="Privacy & Security"
+                    active={activeSection === 'Privacy & Security'}
+                    onClick={() => setActiveSection('Privacy & Security')}
                 />
-                <SettingsNav 
-                    icon={<Keyboard size={18} />} 
-                    label="Input & Hotkeys" 
-                    active={activeSection === 'Input & Hotkeys'} 
-                    onClick={() => setActiveSection('Input & Hotkeys')} 
+                <SettingsNav
+                    icon={<Keyboard size={18} />}
+                    label="Input & Hotkeys"
+                    active={activeSection === 'Input & Hotkeys'}
+                    onClick={() => setActiveSection('Input & Hotkeys')}
                 />
-                <SettingsNav 
-                    icon={<Bell size={18} />} 
-                    label="Notifications" 
-                    active={activeSection === 'Notifications'} 
-                    onClick={() => setActiveSection('Notifications')} 
+                <SettingsNav
+                    icon={<Bell size={18} />}
+                    label="Notifications"
+                    active={activeSection === 'Notifications'}
+                    onClick={() => setActiveSection('Notifications')}
                 />
-                <SettingsNav 
-                    icon={<Volume2 size={18} />} 
-                    label="Audio" 
-                    active={activeSection === 'Audio'} 
-                    onClick={() => setActiveSection('Audio')} 
+                <SettingsNav
+                    icon={<Volume2 size={18} />}
+                    label="Audio"
+                    active={activeSection === 'Audio'}
+                    onClick={() => setActiveSection('Audio')}
+                />
+                <SettingsNav
+                    icon={<RefreshCw size={18} />}
+                    label="Emulation"
+                    active={activeSection === 'Emulation'}
+                    onClick={() => setActiveSection('Emulation')}
+                />
+                <SettingsNav
+                    icon={<Link size={18} />}
+                    label="Integrations"
+                    active={activeSection === 'Integrations'}
+                    onClick={() => setActiveSection('Integrations')}
                 />
             </div>
 
@@ -110,18 +143,18 @@ const Settings: React.FC = () => {
                         <h2 className="text-2xl font-bold text-white mb-6">General Settings</h2>
                         <div className="space-y-6">
                             <SettingGroup title="Startup Behavior">
-                                <Toggle 
-                                    label="Launch Raeen Launcher on system startup" 
+                                <Toggle
+                                    label="Launch Raeen Launcher on system startup"
                                     checked={settings.general.launchOnStartup}
                                     onChange={(v) => handleToggle('general', 'launchOnStartup', v)}
                                 />
-                                <Toggle 
-                                    label="Start minimized to tray" 
+                                <Toggle
+                                    label="Start minimized to tray"
                                     checked={settings.general.startMinimized}
                                     onChange={(v) => handleToggle('general', 'startMinimized', v)}
                                 />
-                                <Toggle 
-                                    label="Auto-detect new games" 
+                                <Toggle
+                                    label="Auto-detect new games"
                                     checked={settings.general.autoDetectGames}
                                     onChange={(v) => handleToggle('general', 'autoDetectGames', v)}
                                 />
@@ -130,7 +163,7 @@ const Settings: React.FC = () => {
                             <SettingGroup title="Appearance">
                                 <div className="flex items-center justify-between py-2">
                                     <span className="text-sm text-gray-300">Theme</span>
-                                    <select 
+                                    <select
                                         className="bg-black/20 border border-white/10 rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none"
                                         value={settings.appearance.theme}
                                         onChange={(e) => handleSelect('appearance', 'theme', e.target.value)}
@@ -139,15 +172,16 @@ const Settings: React.FC = () => {
                                         <option value="light">Light</option>
                                         <option value="cyberpunk">Cyberpunk</option>
                                         <option value="midnight">Midnight</option>
+                                        <option value="dynamic">Dynamic (Adapts to Game Art)</option>
                                     </select>
                                 </div>
-                                <Toggle 
-                                    label="Enable transparency effects" 
+                                <Toggle
+                                    label="Enable transparency effects"
                                     checked={settings.appearance.enableTransparency}
                                     onChange={(v) => handleToggle('appearance', 'enableTransparency', v)}
                                 />
-                                <Toggle 
-                                    label="Show animated backgrounds" 
+                                <Toggle
+                                    label="Show animated backgrounds"
                                     checked={settings.appearance.animatedBackgrounds}
                                     onChange={(v) => handleToggle('appearance', 'animatedBackgrounds', v)}
                                 />
@@ -156,10 +190,71 @@ const Settings: React.FC = () => {
                     </div>
                 )}
 
+                {activeSection === 'Emulation' && (
+                    <div>
+                        <h2 className="text-2xl font-bold text-white mb-6">Emulation Settings</h2>
+                        <div className="space-y-6">
+                            <div className="p-4 bg-blue-900/20 border border-blue-500/20 rounded-lg mb-4 flex items-center justify-between">
+                                <div>
+                                    <h4 className="text-sm font-medium text-blue-100">Auto-Detect Emulators</h4>
+                                    <p className="text-xs text-blue-200/70 mt-1">
+                                        Scan your system for installed emulators (RetroArch, Dolphin, etc.)
+                                    </p>
+                                </div>
+                                <button
+                                    onClick={loadEmulators}
+                                    className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded text-xs font-medium"
+                                >
+                                    Scan Now
+                                </button>
+                            </div>
+
+                            <SettingGroup title="Detected Emulators">
+                                {emulators.length === 0 ? (
+                                    <p className="text-sm text-gray-500 italic">No emulators detected yet.</p>
+                                ) : (
+                                    <div className="space-y-2">
+                                        {emulators.map((emu) => (
+                                            <div key={emu.id} className="flex items-center justify-between p-3 bg-white/5 rounded-lg border border-white/5">
+                                                <div>
+                                                    <div className="text-sm font-bold text-white">{emu.name}</div>
+                                                    <div className="text-xs text-gray-400 font-mono truncate max-w-md">{emu.executable}</div>
+                                                </div>
+                                                <div className="flex gap-2">
+                                                    {emu.platforms.map((p: string) => (
+                                                        <span key={p} className="px-1.5 py-0.5 bg-black/40 rounded text-[10px] text-gray-400 uppercase">{p}</span>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </SettingGroup>
+
+                            <SettingGroup title="ROM Folders">
+                                <div className="flex items-center justify-between py-2">
+                                    <span className="text-sm text-gray-300">Scan Folder for ROMs</span>
+                                    <button
+                                        className="flex items-center gap-2 px-3 py-1.5 bg-white/10 hover:bg-white/20 rounded text-xs text-white transition-colors"
+                                        onClick={() => {
+                                            // Logic to open dialog and pass to EmulationService.scanRomFolder
+                                            // This would ideally need a platform selector modal first
+                                            alert("Feature coming soon: Select a platform then a folder to import ROMs.");
+                                        }}
+                                    >
+                                        <FolderOpen size={14} />
+                                        Add ROM Folder
+                                    </button>
+                                </div>
+                            </SettingGroup>
+                        </div>
+                    </div>
+                )}
+
                 {activeSection === 'Library' && (
                     <div>
                         <h2 className="text-2xl font-bold text-white mb-6">Library Management</h2>
-                        
+
                         <div className="space-y-6">
                             <SettingGroup title="Local Library">
                                 <div className="flex items-center justify-between py-2">
@@ -167,7 +262,7 @@ const Settings: React.FC = () => {
                                         <span className="text-sm text-white font-medium">Scan Folder for Games</span>
                                         <span className="text-xs text-gray-400">Import games from a local directory (e.g. C:\Games)</span>
                                     </div>
-                                    <button 
+                                    <button
                                         onClick={handleScanFolder}
                                         disabled={isScanning}
                                         className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:bg-slate-700 disabled:text-gray-500 rounded-lg text-sm font-medium text-white transition-colors"
@@ -179,13 +274,13 @@ const Settings: React.FC = () => {
                             </SettingGroup>
 
                             <SettingGroup title="Game Management">
-                                <Toggle 
-                                    label="Automatically close launcher when game starts" 
+                                <Toggle
+                                    label="Automatically close launcher when game starts"
                                     checked={settings.gameManagement.closeOnLaunch}
                                     onChange={(v) => handleToggle('gameManagement', 'closeOnLaunch', v)}
                                 />
-                                <Toggle 
-                                    label="Sync game saves to cloud" 
+                                <Toggle
+                                    label="Sync game saves to cloud"
                                     checked={settings.gameManagement.cloudSync}
                                     onChange={(v) => handleToggle('gameManagement', 'cloudSync', v)}
                                 />
@@ -198,10 +293,10 @@ const Settings: React.FC = () => {
                     <div>
                         <h2 className="text-2xl font-bold text-white mb-6">Account Settings</h2>
                         <SettingGroup title="Profile">
-                             <div className="flex items-center justify-between py-2">
+                            <div className="flex items-center justify-between py-2">
                                 <span className="text-sm text-gray-300">Username</span>
-                                <input 
-                                    type="text" 
+                                <input
+                                    type="text"
                                     value={settings.account.username}
                                     onChange={(e) => handleSelect('account', 'username', e.target.value)}
                                     className="bg-black/20 border border-white/10 rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none focus:border-blue-500"
@@ -209,16 +304,16 @@ const Settings: React.FC = () => {
                             </div>
                             <div className="flex items-center justify-between py-2">
                                 <span className="text-sm text-gray-300">Avatar URL</span>
-                                <input 
-                                    type="text" 
+                                <input
+                                    type="text"
                                     value={settings.account.avatar}
                                     onChange={(e) => handleSelect('account', 'avatar', e.target.value)}
                                     className="bg-black/20 border border-white/10 rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none focus:border-blue-500 w-64 truncate"
                                 />
                             </div>
-                             <div className="flex items-center justify-between py-2">
+                            <div className="flex items-center justify-between py-2">
                                 <span className="text-sm text-gray-300">Status</span>
-                                <select 
+                                <select
                                     className="bg-black/20 border border-white/10 rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none"
                                     value={settings.account.status}
                                     onChange={(e) => handleSelect('account', 'status', e.target.value)}
@@ -232,9 +327,60 @@ const Settings: React.FC = () => {
                         </SettingGroup>
                     </div>
                 )}
-                
+
+                {activeSection === 'Integrations' && (
+                    <div>
+                        <h2 className="text-2xl font-bold text-white mb-6">Integrations</h2>
+                        <div className="space-y-6">
+                            <SettingGroup title="Steam Integration">
+                                <div className="p-4 bg-blue-900/20 border border-blue-500/20 rounded-lg mb-4">
+                                    <div className="flex gap-3">
+                                        <div className="text-blue-400 mt-1"><Link size={20} /></div>
+                                        <div>
+                                            <h4 className="text-sm font-medium text-blue-100">Connect Steam Account</h4>
+                                            <p className="text-xs text-blue-200/70 mt-1">
+                                                Enter your Steam API Key and ID to sync friends and status in real-time.
+                                                We only use this to fetch public data.
+                                            </p>
+                                            <a href="https://steamcommunity.com/dev/apikey" target="_blank" rel="noopener noreferrer" className="text-xs text-blue-400 hover:text-blue-300 hover:underline mt-2 inline-block">
+                                                Get API Key &rarr;
+                                            </a>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="space-y-4">
+                                    <div>
+                                        <label className="block text-xs font-medium text-gray-400 mb-1">Steam API Key</label>
+                                        <input
+                                            type="password"
+                                            value={settings.integrations?.steamApiKey || ''}
+                                            onChange={(e) => handleSelect('integrations', 'steamApiKey', e.target.value)}
+                                            className="w-full bg-black/20 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500/50 font-mono placeholder-gray-600"
+                                            placeholder="XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-medium text-gray-400 mb-1">Steam ID (64-bit)</label>
+                                        <input
+                                            type="text"
+                                            value={settings.integrations?.steamId || ''}
+                                            onChange={(e) => handleSelect('integrations', 'steamId', e.target.value)}
+                                            className="w-full bg-black/20 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500/50 font-mono placeholder-gray-600"
+                                            placeholder="76561198000000000"
+                                        />
+                                        <p className="text-xs text-gray-500 mt-1">
+                                            Find this in your Steam profile URL or use <a href="https://steamid.io" target="_blank" className="text-blue-400 hover:underline">steamid.io</a>
+                                        </p>
+                                    </div>
+                                </div>
+                            </SettingGroup>
+                        </div>
+                    </div>
+                )}
+
                 {/* Placeholder for other sections */}
-                {!['General', 'Library', 'Account'].includes(activeSection) && (
+                {!['General', 'Library', 'Account', 'Integrations'].includes(activeSection) && (
                     <div className="flex items-center justify-center h-64 text-gray-500">
                         Section under construction
                     </div>
@@ -245,7 +391,7 @@ const Settings: React.FC = () => {
 };
 
 const SettingsNav = ({ icon, label, active, onClick }: { icon: React.ReactNode, label: string, active?: boolean, onClick?: () => void }) => (
-    <div 
+    <div
         onClick={onClick}
         className={`flex items-center gap-3 px-4 py-3 rounded-lg cursor-pointer transition-colors ${active ? 'bg-blue-600/20 text-blue-400' : 'text-gray-400 hover:bg-white/5 hover:text-white'}`}
     >
@@ -262,7 +408,7 @@ const SettingGroup = ({ title, children }: { title: string, children: React.Reac
 );
 
 const Toggle = ({ label, checked, onChange }: { label: string, checked?: boolean, onChange?: (val: boolean) => void }) => (
-    <div 
+    <div
         className="flex items-center justify-between py-1 group cursor-pointer"
         onClick={() => onChange && onChange(!checked)}
     >

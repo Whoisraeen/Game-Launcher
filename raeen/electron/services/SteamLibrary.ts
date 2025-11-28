@@ -2,6 +2,8 @@ import fs from 'fs';
 import path from 'path';
 import { exec } from 'child_process';
 import util from 'util';
+import axios from 'axios';
+import { SettingsManager } from './settingsManager'; // Import SettingsManager
 
 const execAsync = util.promisify(exec);
 
@@ -10,12 +12,20 @@ export interface SteamGame {
     title: string;
     installPath: string;
     executable?: string;
+    installed: boolean;
+    playtime_forever?: number;
 }
 
 export class SteamLibrary {
+    private settingsManager: SettingsManager;
+
+    constructor() {
+        this.settingsManager = new SettingsManager();
+    }
 
     async getInstalledGames(): Promise<SteamGame[]> {
-        const games: SteamGame[] = [];
+        // 1. Get locally installed games
+        const installedGames: SteamGame[] = [];
         const libraryFolders = await this.getLibraryFolders();
 
         for (const folder of libraryFolders) {
@@ -31,7 +41,7 @@ export class SteamLibrary {
                         const content = fs.readFileSync(path.join(steamAppsPath, manifest), 'utf-8');
                         const game = this.parseManifest(content, steamAppsPath);
                         if (game) {
-                            games.push(game);
+                            installedGames.push(game);
                         }
                     } catch (e) {
                         console.error(`Error parsing manifest ${manifest}:`, e);
@@ -42,7 +52,70 @@ export class SteamLibrary {
             }
         }
 
-        return games;
+        // 2. Get owned games (uninstalled) if Steam ID is present
+        const settings = this.settingsManager.getAllSettings();
+        // @ts-ignore - Dynamic property access if types not updated yet
+        const steamId = settings.integrations?.steamId;
+
+        if (steamId) {
+            console.log(`Fetching owned games for Steam ID: ${steamId}`);
+            const ownedGames = await this.getOwnedGames(steamId);
+            
+            // Merge: Keep installed version if present, add uninstalled ones
+            const mergedGames = [...installedGames];
+            const installedIds = new Set(installedGames.map(g => g.id));
+
+            for (const game of ownedGames) {
+                if (!installedIds.has(game.id)) {
+                    mergedGames.push(game);
+                }
+            }
+            return mergedGames;
+        }
+
+        return installedGames;
+    }
+
+    /**
+     * Fetches owned games from a public Steam profile (XML endpoint).
+     * Note: Profile must be public.
+     */
+    async getOwnedGames(steamId: string): Promise<SteamGame[]> {
+        try {
+            // Try XML endpoint first (legacy but often works for public profiles)
+            // url: https://steamcommunity.com/profiles/{steamId}/games?tab=all&xml=1
+            // Note: steamId must be the 64-bit ID.
+            const url = `https://steamcommunity.com/profiles/${steamId}/games?tab=all&xml=1`;
+            const response = await axios.get(url);
+            const data = response.data;
+
+            // Simple XML parsing (regex/string manipulation to avoid adding xml2js dependency for now)
+            // Structure: <game><appID>10</appID><name>Counter-Strike</name>...</game>
+            const games: SteamGame[] = [];
+            const gameRegex = /<game>[\s\S]*?<\/game>/g;
+            const matches = data.match(gameRegex);
+
+            if (matches) {
+                for (const match of matches) {
+                    const appIdMatch = match.match(/<appID>(\d+)<\/appID>/);
+                    const nameMatch = match.match(/<name><!\[CDATA\[(.*?)\]\]><\/name>/) || match.match(/<name>(.*?)<\/name>/);
+                    
+                    if (appIdMatch && nameMatch) {
+                        games.push({
+                            id: appIdMatch[1],
+                            title: nameMatch[1],
+                            installPath: '', // Unknown for uninstalled
+                            installed: false,
+                            playtime_forever: 0 // XML might not have exact playtime
+                        });
+                    }
+                }
+            }
+            return games;
+        } catch (e) {
+            console.error('Failed to fetch owned games from Steam Community:', e);
+            return [];
+        }
     }
 
     private async getLibraryFolders(): Promise<string[]> {
@@ -116,7 +189,8 @@ export class SteamLibrary {
                 id: idMatch[1],
                 title: nameMatch[1],
                 installPath: installPath,
-                executable: this.findExecutable(installPath)
+                executable: this.findExecutable(installPath),
+                installed: true
             };
         }
         return null;

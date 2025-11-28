@@ -10,6 +10,7 @@ import path from 'path';
 import { shell, app } from 'electron';
 import { SteamLibrary } from './SteamLibrary';
 import { EpicLibrary } from './EpicLibrary';
+import { DiscordManager } from './discordManager';
 
 export class GameManager {
     private scanner: PlatformScanner;
@@ -70,7 +71,7 @@ export class GameManager {
                     result.cover = game.cover || metadata.cover;
                     result.hero = metadata.hero;
                     result.logo = metadata.logo;
-                    result.genre = metadata.genres?.[0]; 
+                    result.genre = metadata.genres?.[0];
                     result.tags = metadata.genres ? JSON.stringify(metadata.genres) : null;
                     result.achievementsTotal = metadata.achievementsTotal || 0;
                     result.videoUrl = metadata.videoUrl;
@@ -84,7 +85,7 @@ export class GameManager {
                 // We need the ID *before* we insert to name files correctly.
                 // Check DB again or use what we found in existingMap?
                 // existingMap key is platform:id.
-                
+
                 // We need to know the UUID.
                 // If existing, use that ID. If not, generate one.
                 let gameId = existing?.id;
@@ -124,10 +125,10 @@ export class GameManager {
           INSERT INTO games (
             id, title, platform, platform_id, install_path, executable, added_at, is_installed, icon_url, cover_url, background_url, logo_url, genre, tags, achievements_total, achievements_unlocked, video_url
           ) VALUES (
-            @id, @title, @platform, @platformId, @installPath, @executable, @addedAt, 1, @icon, @cover, @hero, @logo, @genre, @tags, @achievementsTotal, @achievementsUnlocked, @videoUrl
+            @id, @title, @platform, @platformId, @installPath, @executable, @addedAt, @isInstalled, @icon, @cover, @hero, @logo, @genre, @tags, @achievementsTotal, @achievementsUnlocked, @videoUrl
           )
           ON CONFLICT(id) DO UPDATE SET
-            is_installed = 1,
+            is_installed = @isInstalled,
             install_path = @installPath,
             executable = @executable,
             icon_url = COALESCE(excluded.icon_url, games.icon_url),
@@ -144,14 +145,22 @@ export class GameManager {
                 let insertedCount = 0;
                 for (const game of games) {
                     try {
+                        // Determine is_installed status
+                        // If 'installed' property exists on the scanned object (from Steam), use it.
+                        // Otherwise default to 1 (true) for other scanners that only find installed games.
+                        const isInstalled = (game as any).installed !== undefined ? ((game as any).installed ? 1 : 0) : 1;
+
                         insert.run({
                             id: game._finalId, // Use the ID we generated/found during caching
                             title: game.title,
                             platform: game.platform,
                             platformId: game.platformId,
-                            installPath: game.installPath,
+                            installPath: game.installPath || '', // Allow empty for uninstalled
                             executable: game.executable || null,
                             addedAt: Date.now(),
+                            // Force set is_installed based on scanner result
+                            // We modify the query to accept is_installed parameter
+                            // Wait, the query hardcoded '1'. We need to update the query.
                             icon: game.icon || null,
                             cover: game.cover || null,
                             hero: game.hero || null,
@@ -160,7 +169,8 @@ export class GameManager {
                             tags: game.tags || null,
                             achievementsTotal: game.achievementsTotal || 0,
                             achievementsUnlocked: 0,
-                            videoUrl: game.videoUrl || null
+                            videoUrl: game.videoUrl || null,
+                            isInstalled: isInstalled // Passing this param requires updating the query below
                         });
                         insertedCount++;
                     } catch (err) {
@@ -356,6 +366,9 @@ export class GameManager {
 
         // Update last_played
         db.prepare('UPDATE games SET last_played = ? WHERE id = ?').run(Date.now(), gameId);
+
+        // Set Discord Activity
+        DiscordManager.getInstance().setActivity(game.title, 'Playing');
 
         const launchOptions = game.launch_options || '';
 
@@ -588,7 +601,7 @@ export class GameManager {
                 return true;
             case 'epic':
                 // Opens launcher to store page usually
-                await shell.openExternal(`com.epicgames.launcher://store/product/${game.platform_id}`); 
+                await shell.openExternal(`com.epicgames.launcher://store/product/${game.platform_id}`);
                 return true;
             case 'xbox':
                 // Opens Xbox App store page
@@ -627,6 +640,18 @@ export class GameManager {
                 break;
         }
         return true;
+    }
+
+    async searchMetadata(title: string) {
+        return await this.metadataFetcher.searchMetadata(title);
+    }
+
+    async autoDetectEmulators() {
+        await this.scanner.emulationService.autoDetectEmulators();
+    }
+
+    getEmulators() {
+        return this.scanner.emulationService.getEmulators();
     }
 
     async verifyGame(gameId: string) {

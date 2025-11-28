@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { app } from 'electron';
 import { v4 as uuidv4 } from 'uuid';
+import { EmulatorDiscoveryService } from './EmulatorDiscoveryService';
 
 export interface Emulator {
     id: string;
@@ -25,10 +26,12 @@ export class EmulationService {
     private storagePath: string;
     private emulators: Emulator[] = [];
     private games: EmulatedGame[] = [];
+    private discoveryService: EmulatorDiscoveryService;
 
     constructor() {
         const userDataPath = (app && app.getPath) ? app.getPath('userData') : '.';
         this.storagePath = path.join(userDataPath, 'emulation_data.json');
+        this.discoveryService = new EmulatorDiscoveryService();
         this.loadData();
     }
 
@@ -38,14 +41,44 @@ export class EmulationService {
                 const data = JSON.parse(fs.readFileSync(this.storagePath, 'utf-8'));
                 this.emulators = data.emulators || [];
                 this.games = data.games || [];
-            } else {
-                // Add some default emulators if empty
-                this.addDefaultEmulators();
+            } 
+            
+            // If no emulators, try auto-discovery
+            if (this.emulators.length === 0) {
+                this.autoDetectEmulators();
             }
         } catch (e) {
             console.error('Failed to load emulation data:', e);
             this.emulators = [];
             this.games = [];
+        }
+    }
+
+    public async autoDetectEmulators() {
+        try {
+            const detected = await this.discoveryService.discover();
+            let addedCount = 0;
+
+            for (const item of detected) {
+                // Check if we already have this executable path
+                const exists = this.emulators.some(e => e.executable === item.fullPath);
+                if (!exists) {
+                    this.addEmulator(
+                        item.emulator.name,
+                        item.fullPath,
+                        item.emulator.defaultArgs,
+                        item.emulator.platforms,
+                        item.emulator.extensions
+                    );
+                    addedCount++;
+                }
+            }
+            
+            if (addedCount > 0) {
+                console.log(`Auto-detected and added ${addedCount} emulators.`);
+            }
+        } catch (e) {
+            console.error('Error during emulator auto-detection:', e);
         }
     }
 
@@ -59,27 +92,8 @@ export class EmulationService {
             console.error('Failed to save emulation data:', e);
         }
     }
-
-    private addDefaultEmulators() {
-        // Add common emulators as examples/defaults
-        this.emulators.push({
-            id: uuidv4(),
-            name: 'RetroArch',
-            executable: 'C:\\RetroArch\\retroarch.exe',
-            arguments: '-L {core} {rom}',
-            platforms: ['nes', 'snes', 'gba', 'n64', 'ps1'],
-            extensions: ['.nes', '.sfc', '.smc', '.gba', '.gbc', '.n64', '.z64', '.cue', '.iso', '.chd']
-        });
-        this.emulators.push({
-            id: uuidv4(),
-            name: 'Dolphin',
-            executable: 'C:\\Dolphin\\Dolphin.exe',
-            arguments: '-b -e {rom}',
-            platforms: ['gc', 'wii'],
-            extensions: ['.iso', '.gcz', '.wbfs', '.rvz', '.ciso']
-        });
-        this.saveData();
-    }
+    
+    // Removed addDefaultEmulators as we use autoDetectEmulators now
 
     getEmulators(): Emulator[] {
         return this.emulators;

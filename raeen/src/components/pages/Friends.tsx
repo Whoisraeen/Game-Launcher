@@ -1,10 +1,10 @@
 import React, { useMemo, useState, useEffect } from 'react';
-import { Search, UserPlus, MessageSquare, RefreshCw, Trash2, Gamepad2, Download } from 'lucide-react';
+import { Search, UserPlus, MessageSquare, RefreshCw, Trash2, Gamepad2, Download, Cloud, Activity } from 'lucide-react';
 import { useFriendStore } from '../../stores/friendStore';
 import { Friend } from '../../types';
 
 const Friends: React.FC = () => {
-    const { friends, loadFriends, addFriend, removeFriend, simulateActivity, importSteamFriends } = useFriendStore();
+    const { friends, loadFriends, addFriend, removeFriend, simulateActivity, importSteamFriends, syncFriends } = useFriendStore();
     const [filter, setFilter] = useState('');
     const [showAddModal, setShowAddModal] = useState(false);
     const [newFriendName, setNewFriendName] = useState('');
@@ -49,9 +49,16 @@ const Friends: React.FC = () => {
                         <h2 className="text-xl font-bold text-white">Friends</h2>
                         <div className="flex gap-2">
                             <button
+                                onClick={syncFriends}
+                                className="p-2 hover:bg-white/10 rounded-full transition-colors text-gray-400 hover:text-white"
+                                title="Sync with Steam API"
+                            >
+                                <Cloud size={18} />
+                            </button>
+                            <button
                                 onClick={() => importSteamFriends()}
                                 className="p-2 hover:bg-white/10 rounded-full transition-colors text-gray-400 hover:text-white"
-                                title="Import Steam Friends"
+                                title="Import Steam Friends (Local)"
                             >
                                 <Download size={18} />
                             </button>
@@ -83,6 +90,26 @@ const Friends: React.FC = () => {
                 </div>
 
                 <div className="flex-1 overflow-y-auto custom-scrollbar">
+                    {/* Activity Feed Section */}
+                    <div className="px-4 py-2 text-xs font-bold text-gray-500 uppercase tracking-wider flex items-center gap-2">
+                        <Activity size={12} /> Activity Feed
+                    </div>
+                    <div className="px-4 pb-4 space-y-3">
+                        {onlineFriends.filter(f => f.status === 'playing').map(friend => (
+                            <div key={`feed-${friend.id}`} className="bg-white/5 rounded-lg p-2 text-xs border border-white/5">
+                                <span className="font-bold text-white">{friend.username}</span>
+                                <span className="text-gray-400"> started playing </span>
+                                <span className="text-purple-400 font-bold">{friend.activity}</span>
+                            </div>
+                        ))}
+                        {onlineFriends.filter(f => f.status === 'online').slice(0, 3).map(friend => (
+                            <div key={`feed-online-${friend.id}`} className="bg-white/5 rounded-lg p-2 text-xs border border-white/5">
+                                <span className="font-bold text-white">{friend.username}</span>
+                                <span className="text-gray-400"> is now online</span>
+                            </div>
+                        ))}
+                    </div>
+
                     <div className="px-4 py-2 text-xs font-bold text-gray-500 uppercase tracking-wider">Online — {onlineFriends.length}</div>
                     {onlineFriends.map(friend => (
                         <FriendRow
@@ -132,8 +159,8 @@ const Friends: React.FC = () => {
                                         className={`w-10 h-10 rounded-full bg-slate-700 ${selectedFriend.status === 'offline' ? 'grayscale opacity-70' : ''}`}
                                     />
                                     <div className={`absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-slate-900 ${selectedFriend.status === 'online' ? 'bg-green-500' :
-                                            selectedFriend.status === 'playing' ? 'bg-purple-500' :
-                                                selectedFriend.status === 'away' ? 'bg-yellow-500' : 'bg-gray-500'
+                                        selectedFriend.status === 'playing' ? 'bg-purple-500' :
+                                            selectedFriend.status === 'away' ? 'bg-yellow-500' : 'bg-gray-500'
                                         }`}></div>
                                 </div>
                                 <div>
@@ -270,7 +297,7 @@ const FriendRow = ({ friend, isSelected, onClick, online }: { friend: Friend, is
             <img src={friend.avatar} alt={friend.username} className={`w-10 h-10 rounded-full bg-slate-700 ${online ? '' : 'grayscale opacity-70'}`} />
             {online && (
                 <div className={`absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-slate-900 ${friend.status === 'playing' ? 'bg-purple-500' :
-                        friend.status === 'away' ? 'bg-yellow-500' : 'bg-green-500'
+                    friend.status === 'away' ? 'bg-yellow-500' : 'bg-green-500'
                     }`}></div>
             )}
         </div>

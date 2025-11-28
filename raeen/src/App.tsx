@@ -1,13 +1,15 @@
 import { useState, useEffect } from 'react';
 import Sidebar from './components/Sidebar';
 import RightSidebar from './components/RightSidebar';
-import { Ghost, Settings as SettingsIcon, Bell, MonitorPlay } from 'lucide-react';
+import { Ghost, Settings as SettingsIcon, Bell, MonitorPlay, Activity } from 'lucide-react';
 import { useSettingsStore } from './stores/settingsStore';
 import { useGameStore } from './stores/gameStore';
 import { NavigationProvider } from './context/NavigationContext';
 import BigPictureLayout from './components/BigPicture/BigPictureLayout';
 import { useGamepad } from './hooks/useGamepad';
 import { useTheme } from './hooks/useTheme';
+import Overlay from './components/Overlay';
+import { usePerformanceStore } from './stores/performanceStore';
 
 // Pages
 import Library from './components/pages/Library';
@@ -17,6 +19,15 @@ import News from './components/pages/News';
 import Analytics from './components/pages/Analytics';
 import Mods from './components/pages/Mods';
 import Settings from './components/pages/Settings';
+import Collections from './components/pages/Collections';
+import Wishlist from './components/pages/Wishlist';
+import SocialHub from './components/pages/SocialHub';
+import Widgets from './components/Widgets';
+import SmartDashboard from './components/pages/SmartDashboard';
+import SaveManager from './components/pages/SaveManager';
+import Studio from './components/pages/Studio';
+import HardwareLab from './components/pages/HardwareLab';
+import Troubleshooter from './components/tools/Troubleshooter';
 
 
 
@@ -25,7 +36,13 @@ function App() {
   const [isBigPicture, setIsBigPicture] = useState(false);
   const { loadSettings } = useSettingsStore();
   const { loadGames } = useGameStore();
-  
+  const { toggleOverlay, isOverlayVisible } = usePerformanceStore();
+
+  // Check for Overlay Window Mode
+  if (window.location.hash === '#overlay') {
+      return <Overlay />;
+  }
+
   useTheme();
 
   useEffect(() => {
@@ -57,11 +74,20 @@ function App() {
   const renderPage = () => {
     switch (activePage) {
       case 'Library': return <Library />;
+      case 'Collections': return <Collections />;
+      case 'Wishlist': return <Wishlist />;
       case 'Store': return <Store />;
       case 'Friends': return <Friends />;
+      case 'SocialHub': return <SocialHub />;
+      case 'Widgets': return <Widgets />;
+      case 'SmartDashboard': return <SmartDashboard />;
       case 'News': return <News />;
       case 'Analytics': return <Analytics />;
       case 'Mods': return <Mods />;
+      case 'SaveManager': return <SaveManager />;
+      case 'Studio': return <Studio />;
+      case 'HardwareLab': return <HardwareLab />;
+      case 'Troubleshooter': return <Troubleshooter />;
       case 'Settings': return <Settings />;
       default: return <Library />;
     }
@@ -91,12 +117,19 @@ function App() {
               <span className="text-xs font-bold tracking-widest text-gray-300">RAEEN LAUNCHER</span>
             </div>
             <div className="flex items-center gap-4 no-drag">
-              <button 
+              <button
                 onClick={() => setIsBigPicture(true)}
                 className="p-1 hover:text-[var(--accent)] transition-colors text-gray-400"
                 title="Enter Big Picture Mode"
               >
                 <MonitorPlay size={16} />
+              </button>
+              <button
+                onClick={toggleOverlay}
+                className={`p-1 hover:text-[var(--accent)] transition-colors ${isOverlayVisible ? 'text-[var(--accent)]' : 'text-gray-400'}`}
+                title="Toggle Performance Overlay"
+              >
+                <Activity size={16} />
               </button>
               <Bell size={14} className="text-gray-400 hover:text-white cursor-pointer" />
               <SettingsIcon size={14} className="text-gray-400 hover:text-white cursor-pointer" onClick={() => setActivePage('Settings')} />
@@ -118,6 +151,7 @@ function App() {
 
             <RightSidebar />
           </div>
+          <Overlay />
         </div>
       )}
     </NavigationProvider>
