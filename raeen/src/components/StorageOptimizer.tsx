@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { HardDrive, Archive, AlertTriangle, Trash2, ArrowRight } from 'lucide-react';
-import { useGameStore } from '../../stores/gameStore';
+import { useGameStore } from '../stores/gameStore';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
 
 const StorageOptimizer: React.FC = () => {

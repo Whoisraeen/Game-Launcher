@@ -4,7 +4,16 @@
       "Bash(dir /s /b *.ts)",
       "Bash(findstr:*)",
       "Bash(npm run dev:*)",
-      "Bash(npx electron-rebuild:*)"
+      "Bash(npx electron-rebuild:*)",
+      "Bash(npm uninstall:*)",
+      "Bash(ren:*)",
+      "Bash(npm install:*)",
+      "Bash(dir /s /b C:Python*)",
+      "Bash(where:*)",
+      "Bash(npm config set:*)",
+      "Bash(set PYTHON=\"C:\\Users\\woisr\\AppData\\Local\\Programs\\Python\\Python314\\python.exe\")",
+      "Bash(npm_config_python=\"C:\\Users\\woisr\\AppData\\Local\\Programs\\Python\\Python314\\python.exe\" npx:*)",
+      "Bash(cat:*)"
     ],
     "deny": [],
     "ask": []

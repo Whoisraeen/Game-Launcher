@@ -1,13 +1,12 @@
 import ffmpeg from 'fluent-ffmpeg';
-import ffprobe from 'fluent-ffmpeg/lib/utils/ffprobe'; // Correct way to import ffprobe
 import ffmpegPath from 'ffmpeg-static';
 import path from 'path';
 import fs from 'fs';
 
-// Set the ffmpeg and ffprobe paths
-ffmpeg.setFfmpegPath(ffmpegPath || '');
-// ffprobe is automatically set if ffmpeg path is set, but can be set explicitly if needed
-// ffmpeg.setFfprobePath(ffprobePath || ''); 
+// Set the ffmpeg path
+if (ffmpegPath) {
+    ffmpeg.setFfmpegPath(ffmpegPath);
+}
 
 export interface VideoMetadata {
     duration: number; // in seconds
@@ -29,7 +28,7 @@ export class VideoEditorService {
                 return reject(new Error('Video file not found.'));
             }
 
-            ffprobe(videoPath, ['-hide_banner'], (err, metadata) => {
+            ffmpeg.ffprobe(videoPath, (err, metadata) => {
                 if (err) {
                     return reject(err);
                 }

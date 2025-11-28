@@ -16,11 +16,7 @@ import {
     SortableContext
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import * as ReactWindow from 'react-window';
-import AutoSizer from 'react-virtualized-auto-sizer';
-
-const Grid = ReactWindow.FixedSizeGrid;
-const List = ReactWindow.FixedSizeList;
+// Removed react-window virtualization for simplicity
 
 import { useGameStore } from '../stores/gameStore';
 import { Game } from '../types';
@@ -150,66 +146,7 @@ const GameGrid: React.FC = () => {
         }
     };
 
-    // Update the itemData in Grid to use new handler
-    const GridCell = ({ columnIndex, rowIndex, style, data }: any) => {
-        const { games, columnCount, onClick, onContextMenu, toggleFavorite, launchGame } = data;
-        const index = rowIndex * columnCount + columnIndex;
-        const game = games[index];
-
-        if (!game) return null;
-
-        return (
-            <div style={style} className="p-3">
-                <SortableGameCard
-                    game={game}
-                    onClick={onClick} // This is now handleGameClick passed from itemData
-                    onContextMenu={onContextMenu}
-                    toggleFavorite={toggleFavorite}
-                    launchGame={launchGame}
-                />
-            </div>
-        );
-    };
-
-    const ListRow = ({ index, style, data }: any) => {
-        const { games, onClick, onContextMenu, launchGame } = data;
-        const game = games[index];
-
-        return (
-            <div style={style} className="px-6 py-2">
-                <div
-                    className="flex items-center gap-4 p-3 glass-card hover:bg-white/5 rounded-xl cursor-pointer group"
-                    onClick={() => onClick(game)}
-                    onContextMenu={(e) => onContextMenu(e, game)}
-                >
-                    <CachedImage
-                        src={game.cover}
-                        alt={game.title}
-                        className="w-16 h-24 object-cover rounded-lg"
-                        placeholderSrc="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxIDEiPjxyZWN0IHdpZHRoPSIxIiBoZWlnaHQ9IjEiIGZpbGw9IiMxZTI5M2IiLz48L3N2Zz4="
-                    />
-                    <div className="flex-1">
-                        <h3 className="font-bold text-lg text-white">{game.title}</h3>
-                        <div className="flex items-center gap-2 text-sm text-gray-400">
-                            <img src={getPlatformIcon(game.platform)} alt={game.platform} className="w-4 h-4 invert opacity-70" />
-                            <span>{game.platform}</span>
-                            <span>•</span>
-                            <span>{game.playtime ? Math.round(game.playtime / 60) + 'h played' : 'Never played'}</span>
-                        </div>
-                    </div>
-                    <button
-                        className="p-3 rounded-full bg-white text-black opacity-0 group-hover:opacity-100 transition-opacity"
-                        onClick={(e) => {
-                            e.stopPropagation();
-                            launchGame(game.id);
-                        }}
-                    >
-                        <Play size={20} fill="currentColor" />
-                    </button>
-                </div>
-            </div>
-        );
-    };
+    // Removed virtualized grid/list components
 
     return (
         <div className="flex-1 h-full flex flex-col overflow-hidden">
@@ -294,55 +231,56 @@ const GameGrid: React.FC = () => {
                                     setActiveTab('ALL GAMES');
                                 }} className="text-blue-400 hover:underline">Clear filters</button>
                             </div>
+                        ) : viewMode === 'grid' ? (
+                            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-4 p-4 overflow-y-auto">
+                                {filteredGames.map(game => (
+                                    <div key={game.id} className="h-[300px]">
+                                        <SortableGameCard
+                                            game={game}
+                                            onClick={handleGameClick}
+                                            onContextMenu={handleContextMenu}
+                                            toggleFavorite={toggleFavorite}
+                                            launchGame={launchGame}
+                                        />
+                                    </div>
+                                ))}
+                            </div>
                         ) : (
-                            <AutoSizer>
-                                {({ height, width }) => {
-                                    if (viewMode === 'grid') {
-                                        const columnWidth = 220;
-                                        const columnCount = Math.floor(width / columnWidth) || 1;
-                                        const rowHeight = 330;
-                                        const rowCount = Math.ceil(filteredGames.length / columnCount);
-
-                                        return (
-                                            <Grid
-                                                columnCount={columnCount}
-                                                columnWidth={width / columnCount}
-                                                height={height}
-                                                rowCount={rowCount}
-                                                rowHeight={rowHeight}
-                                                width={width}
-                                                itemData={{
-                                                    games: filteredGames,
-                                                    columnCount,
-                                                    onClick: handleGameClick, // Pass new handler
-                                                    onContextMenu: handleContextMenu,
-                                                    toggleFavorite,
-                                                    launchGame
-                                                }}
-                                            >
-                                                {GridCell}
-                                            </Grid>
-                                        );
-                                    } else {
-                                        return (
-                                            <List
-                                                height={height}
-                                                itemCount={filteredGames.length}
-                                                itemSize={100}
-                                                width={width}
-                                                itemData={{
-                                                    games: filteredGames,
-                                                    onClick: handleGameClick, // Pass new handler
-                                                    onContextMenu: handleContextMenu,
-                                                    launchGame
-                                                }}
-                                            >
-                                                {ListRow}
-                                            </List>
-                                        );
-                                    }
-                                }}
-                            </AutoSizer>
+                            <div className="flex flex-col gap-2 p-4 overflow-y-auto">
+                                {filteredGames.map(game => (
+                                    <div
+                                        key={game.id}
+                                        className="flex items-center gap-4 p-3 glass-card hover:bg-white/5 rounded-xl cursor-pointer group"
+                                        onClick={() => handleGameClick(game)}
+                                        onContextMenu={(e) => handleContextMenu(e, game)}
+                                    >
+                                        <CachedImage
+                                            src={game.cover}
+                                            alt={game.title}
+                                            className="w-16 h-24 object-cover rounded-lg"
+                                            placeholderSrc="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxIDEiPjxyZWN0IHdpZHRoPSIxIiBoZWlnaHQ9IjEiIGZpbGw9IiMxZTI5M2IiLz48L3N2Zz4="
+                                        />
+                                        <div className="flex-1">
+                                            <h3 className="font-bold text-lg text-white">{game.title}</h3>
+                                            <div className="flex items-center gap-2 text-sm text-gray-400">
+                                                <img src={getPlatformIcon(game.platform)} alt={game.platform} className="w-4 h-4 invert opacity-70" />
+                                                <span>{game.platform}</span>
+                                                <span>•</span>
+                                                <span>{game.playtime ? Math.round(game.playtime / 60) + 'h played' : 'Never played'}</span>
+                                            </div>
+                                        </div>
+                                        <button
+                                            className="p-3 rounded-full bg-white text-black opacity-0 group-hover:opacity-100 transition-opacity"
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                launchGame(game.id);
+                                            }}
+                                        >
+                                            <Play size={20} fill="currentColor" />
+                                        </button>
+                                    </div>
+                                ))}
+                            </div>
                         )}
                     </SortableContext>
                 </DndContext>
