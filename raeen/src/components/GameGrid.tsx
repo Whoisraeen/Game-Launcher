@@ -31,14 +31,14 @@ import { getDominantColor } from '../utils/colorUtils';
 
 const GameGrid: React.FC = () => {
     const { games, collections, selectedCollectionId, setSelectedCollectionId, loadGames, launchGame, toggleFavorite, reorderGames, saveGameOrder, syncLibrary, isLoading } = useGameStore();
-    const { setDynamicAccentColor } = useUIStore(); // UI Store
+    const { setDynamicAccentColor, selectedGame, setSelectedGame } = useUIStore(); // UI Store
     const [activeTab, setActiveTab] = useState('ALL GAMES');
 
     const [searchQuery, setSearchQuery] = useState('');
     const [selectedGenre, setSelectedGenre] = useState<string | null>(null);
     const [selectedPlatform, setSelectedPlatform] = useState<string | null>(null);
     const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
-    const [selectedGame, setSelectedGame] = useState<Game | null>(null);
+    // const [selectedGame, setSelectedGame] = useState<Game | null>(null); // Moved to UI Store
     const [sortBy] = useState<'name' | 'playtime' | 'lastPlayed' | 'rating' | 'added'>('name');
     const [sortDirection] = useState<'asc' | 'desc'>('asc');
     const [showSortMenu, setShowSortMenu] = useState(false);

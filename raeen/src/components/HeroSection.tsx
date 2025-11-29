@@ -1,11 +1,13 @@
 import React, { useEffect } from 'react';
 import { Play, Clock, Trophy } from 'lucide-react';
 import { useGameStore } from '../stores/gameStore';
+import { useUIStore } from '../stores/uiStore';
 import { getPlatformIcon, getPlatformName } from '../data/LauncherData';
 import { CachedImage } from './CachedImage';
 
 const HeroSection: React.FC = () => {
-    const { games, recommendations, loadRecommendations } = useGameStore();
+    const { games, recommendations, loadRecommendations, launchGame } = useGameStore();
+    const { setSelectedGame } = useUIStore();
 
     useEffect(() => {
         loadRecommendations();
@@ -75,11 +77,17 @@ const HeroSection: React.FC = () => {
                         </div>
 
                         <div className="flex gap-3">
-                            <button className="bg-white text-black hover:bg-gray-200 px-8 py-3 rounded-full font-bold flex items-center gap-2 transition-all hover:scale-105 shadow-[0_0_20px_rgba(255,255,255,0.2)]">
+                            <button 
+                                onClick={() => launchGame(lastPlayed.id)}
+                                className="bg-white text-black hover:bg-gray-200 px-8 py-3 rounded-full font-bold flex items-center gap-2 transition-all hover:scale-105 shadow-[0_0_20px_rgba(255,255,255,0.2)]"
+                            >
                                 <Play size={18} fill="currentColor" />
                                 Resume
                             </button>
-                            <button className="bg-white/10 hover:bg-white/20 text-white px-6 py-3 rounded-full font-bold backdrop-blur-md border border-white/10 transition-all">
+                            <button 
+                                onClick={() => setSelectedGame(lastPlayed)}
+                                className="bg-white/10 hover:bg-white/20 text-white px-6 py-3 rounded-full font-bold backdrop-blur-md border border-white/10 transition-all"
+                            >
                                 Details
                             </button>
                         </div>
@@ -105,7 +113,12 @@ const HeroSection: React.FC = () => {
                             <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2 text-right">Recommended For You</h3>
                             <div className="flex gap-3">
                                 {recommendations.slice(0, 3).map(rec => (
-                                    <div key={rec.id} className="w-12 h-16 rounded-md overflow-hidden border border-white/10 hover:border-white/50 transition-colors cursor-pointer relative group/rec" title={rec.title}>
+                                    <div 
+                                        key={rec.id} 
+                                        onClick={() => setSelectedGame(rec)}
+                                        className="w-12 h-16 rounded-md overflow-hidden border border-white/10 hover:border-white/50 transition-colors cursor-pointer relative group/rec" 
+                                        title={rec.title}
+                                    >
                                         <CachedImage 
                                             src={rec.cover || ''} 
                                             className="w-full h-full object-cover" 
