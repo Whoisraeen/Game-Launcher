@@ -3,8 +3,8 @@ import { Plus, Folder, Trash2 } from 'lucide-react';
 import { useGameStore } from '../../stores/gameStore';
 import { CachedImage } from '../CachedImage';
 
-const Collections: React.FC = () => {
-    const { collections, games, loadCollections, createCollection, deleteCollection } = useGameStore();
+const Collections: React.FC<{ onNavigate?: (page: string) => void }> = ({ onNavigate }) => {
+    const { collections, games, loadCollections, createCollection, deleteCollection, setSelectedCollectionId } = useGameStore();
     const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
     const [newCollectionName, setNewCollectionName] = useState('');
     const [newCollectionDesc, setNewCollectionDesc] = useState('');
@@ -21,6 +21,11 @@ const Collections: React.FC = () => {
             setNewCollectionDesc('');
             setIsCreateModalOpen(false);
         }
+    };
+
+    const handleCollectionClick = (id: string) => {
+        setSelectedCollectionId(id);
+        if (onNavigate) onNavigate('Library');
     };
 
     const getCollectionCover = (gameIds: string[]) => {
@@ -51,7 +56,11 @@ const Collections: React.FC = () => {
                     const cover = getCollectionCover(collection.gameIds);
 
                     return (
-                        <div key={collection.id} className="group relative aspect-video bg-white/5 rounded-2xl border border-white/5 hover:border-white/20 transition-all overflow-hidden cursor-pointer hover:scale-[1.02]">
+                        <div 
+                            key={collection.id} 
+                            onClick={() => handleCollectionClick(collection.id)}
+                            className="group relative aspect-video bg-white/5 rounded-2xl border border-white/5 hover:border-white/20 transition-all overflow-hidden cursor-pointer hover:scale-[1.02]"
+                        >
                             {/* Background / Cover */}
                             <div className="absolute inset-0">
                                 {cover ? (

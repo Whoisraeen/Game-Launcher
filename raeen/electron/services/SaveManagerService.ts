@@ -26,7 +26,7 @@ export class SaveManagerService {
     private configPath: string;
     private backupsRoot: string;
     private configs: SaveConfig[] = [];
-    private watchers: Map<string, chokidar.FSWatcher> = new Map();
+    private watchers: Map<string, any> = new Map();
     private cloudPath: string | null = null;
 
     constructor() {
@@ -271,7 +271,15 @@ export class SaveManagerService {
                 });
             });
 
-            archive.on('error', (err) => reject(err));
+            archive.on('warning', (err: any) => {
+                if (err.code === 'ENOENT') {
+                    console.warn('Archiver warning:', err);
+                } else {
+                    reject(err);
+                }
+            });
+
+            archive.on('error', (err: any) => reject(err));
 
             archive.pipe(output);
             archive.directory(config.path, false);

@@ -112,8 +112,7 @@ export class EmulatorDiscoveryService {
         const home = app.getPath('home');
         const appData = app.getPath('appData'); // Roaming
         const localAppData = path.join(home, 'AppData', 'Local');
-        const programFiles = process.env['ProgramFiles'] || 'C:\Program Files';
-        const programFilesX86 = process.env['ProgramFiles(x86)'] || 'C:\Program Files (x86)';
+        const programFiles = process.env['ProgramFiles'] || 'C:\\Program Files';
 
         this.searchPaths = [
             path.join(home, 'RetroArch'),

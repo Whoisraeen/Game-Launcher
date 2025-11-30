@@ -130,9 +130,9 @@ const ClockWidget = () => {
 const SystemWidget = () => {
     const { stats } = usePerformanceStore();
     // Mock data if stats are empty (e.g. not running in Electron or service not ready)
-    const cpu = stats?.cpuLoad || 15;
-    const ram = stats?.memUsed ? (stats.memUsed / stats.memTotal) * 100 : 42;
-    const gpu = stats?.gpuLoad || 28;
+    const cpu = stats?.cpu.usage || 15;
+    const ram = stats?.memory.percentage || 42;
+    const gpu = stats?.gpu[0]?.usage || 28;
 
     return (
         <div className="space-y-4 h-full flex flex-col justify-center">

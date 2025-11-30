@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { Maximize, X, Monitor, Sliders } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Maximize, X, Monitor } from 'lucide-react';
 
 const MonitorCalibration: React.FC = () => {
     const [isFullscreen, setIsFullscreen] = useState(false);

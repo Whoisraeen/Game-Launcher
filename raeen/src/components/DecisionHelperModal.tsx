@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import { Sparkles, Shuffle, History, Clock, Zap, X } from 'lucide-react';
-import { useGameStore } from '../stores/gameStore';
 
 interface DecisionHelperModalProps {
     onClose: () => void;
@@ -8,7 +7,6 @@ interface DecisionHelperModalProps {
 }
 
 const DecisionHelperModal: React.FC<DecisionHelperModalProps> = ({ onClose, onLaunch }) => {
-    const { games } = useGameStore();
     const [suggestedGame, setSuggestedGame] = useState<any | null>(null);
     const [isRolling, setIsRolling] = useState(false);
     const [timeAvailable, setTimeAvailable] = useState<number>(120); // Default 2 hours (essentially unlimited for filters)

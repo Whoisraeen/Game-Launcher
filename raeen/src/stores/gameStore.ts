@@ -37,6 +37,7 @@ interface GameState {
     updateUserNotes: (gameId: string, notes: string) => Promise<void>;
     openInstallFolder: (gameId: string) => Promise<void>;
     createShortcut: (gameId: string) => Promise<void>;
+    installGame: (gameId: string) => Promise<void>;
     uninstallGame: (gameId: string) => Promise<void>;
     updateGameDetails: (gameId: string, updates: Partial<Game>) => Promise<void>;
     reorderGames: (activeId: string, overId: string) => void;
@@ -49,6 +50,10 @@ interface GameState {
     importSteamFriends: () => Promise<void>;
     loadAchievements: () => Promise<void>;
     openExternal: (url: string) => Promise<void>;
+    
+    // Merging
+    mergeGames: (primaryId: string, secondaryId: string) => Promise<void>;
+    unmergeGame: (gameId: string) => Promise<void>;
 }
 
 export const useGameStore = create<GameState>((set, get) => ({
@@ -82,6 +87,14 @@ export const useGameStore = create<GameState>((set, get) => ({
         }
     },
 
+    installGame: async (gameId) => {
+        try {
+            await window.ipcRenderer.invoke('games:install', gameId);
+        } catch (error) {
+            console.error('Failed to install game:', error);
+        }
+    },
+
     uninstallGame: async (gameId) => {
         try {
             await window.ipcRenderer.invoke('games:uninstall', gameId);
@@ -104,6 +117,7 @@ export const useGameStore = create<GameState>((set, get) => ({
                 status: g.is_installed ? 'installed' : 'not_installed',
                 playStatus: g.play_status || 'none',
                 lastPlayed: g.last_played ? new Date(g.last_played) : undefined,
+                addedAt: g.added_at ? new Date(g.added_at) : undefined,
                 playtime: g.playtime_seconds ? g.playtime_seconds / 3600 : 0,
                 isFavorite: !!g.is_favorite,
                 isHidden: !!g.is_hidden,
@@ -119,7 +133,8 @@ export const useGameStore = create<GameState>((set, get) => ({
                 rating: g.rating || 0,
                 userNotes: g.user_notes || '',
                 heroImage: g.background_url || g.cover_url,
-                logo: g.logo_url
+                logo: g.logo_url,
+                group_id: g.group_id
             }));
 
             set({
@@ -155,6 +170,7 @@ export const useGameStore = create<GameState>((set, get) => ({
                 status: g.is_installed ? 'installed' : 'not_installed',
                 playStatus: g.play_status || 'none',
                 lastPlayed: g.last_played ? new Date(g.last_played) : undefined,
+                addedAt: g.added_at ? new Date(g.added_at) : undefined,
                 playtime: g.playtime_seconds ? g.playtime_seconds / 3600 : 0,
                 isFavorite: !!g.is_favorite,
                 isHidden: !!g.is_hidden,
@@ -170,7 +186,8 @@ export const useGameStore = create<GameState>((set, get) => ({
                 rating: g.rating || 0,
                 userNotes: g.user_notes || '',
                 heroImage: g.background_url || g.cover_url,
-                logo: g.logo_url
+                logo: g.logo_url,
+                group_id: g.group_id
             }));
 
             set(state => ({
@@ -205,6 +222,7 @@ export const useGameStore = create<GameState>((set, get) => ({
                 status: g.is_installed ? 'installed' : 'not_installed',
                 playStatus: g.play_status || 'none',
                 lastPlayed: g.last_played ? new Date(g.last_played) : undefined,
+                addedAt: g.added_at ? new Date(g.added_at) : undefined,
                 playtime: g.playtime_seconds ? g.playtime_seconds / 3600 : 0,
                 isFavorite: !!g.is_favorite,
                 isHidden: !!g.is_hidden,
@@ -232,9 +250,10 @@ export const useGameStore = create<GameState>((set, get) => ({
     loadCollections: async () => {
         try {
             const result = await window.ipcRenderer.invoke('collections:getAll');
-            set({ collections: result });
+            set({ collections: Array.isArray(result) ? result : [] });
         } catch (error) {
             console.error('Failed to load collections:', error);
+            set({ collections: [] });
         }
     },
 
@@ -444,6 +463,24 @@ export const useGameStore = create<GameState>((set, get) => ({
         }
     },
 
+    mergeGames: async (primaryId: string, secondaryId: string) => {
+        try {
+            await window.ipcRenderer.invoke('games:merge', primaryId, secondaryId);
+            await get().loadGames(true);
+        } catch (error) {
+            console.error('Failed to merge games:', error);
+        }
+    },
+
+    unmergeGame: async (gameId: string) => {
+        try {
+            await window.ipcRenderer.invoke('games:unmerge', gameId);
+            await get().loadGames(true);
+        } catch (error) {
+            console.error('Failed to unmerge game:', error);
+        }
+    },
+
     // Friends & Achievements
     friends: [],
     achievements: [],
@@ -451,16 +488,17 @@ export const useGameStore = create<GameState>((set, get) => ({
     loadFriends: async () => {
         try {
             const result = await window.ipcRenderer.invoke('friends:getAll');
-            set({ friends: result });
+            set({ friends: Array.isArray(result) ? result : [] });
         } catch (error) {
             console.error('Failed to load friends:', error);
+            set({ friends: [] });
         }
     },
 
     importSteamFriends: async () => {
         try {
             const result = await window.ipcRenderer.invoke('friends:importSteam');
-            set({ friends: result }); // Assuming import returns the full list or we reload
+            set({ friends: Array.isArray(result) ? result : [] });
         } catch (error) {
             console.error('Failed to import Steam friends:', error);
         }

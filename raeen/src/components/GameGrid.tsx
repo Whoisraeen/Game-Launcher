@@ -1,22 +1,22 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { Play, Search, Filter, Heart, LayoutGrid, List as ListIcon, ArrowUpDown, Dices, RefreshCw } from 'lucide-react';
-import {
-    DndContext,
-    closestCenter,
-    KeyboardSensor,
-    PointerSensor,
-    useSensor,
-    useSensors,
-    DragEndEvent
+import { Play, Search, Filter, Heart, LayoutGrid, List as ListIcon, Dices } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { 
+  DndContext, 
+  closestCenter,
+  KeyboardSensor, 
+  PointerSensor, 
+  useSensor, 
+  useSensors, 
+  DragEndEvent 
 } from '@dnd-kit/core';
-import {
-    useSortable,
-    sortableKeyboardCoordinates,
-    rectSortingStrategy,
-    SortableContext
+import { 
+  SortableContext, 
+  sortableKeyboardCoordinates, 
+  rectSortingStrategy,
+  useSortable
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-// Removed react-window virtualization for simplicity
 
 import { useGameStore } from '../stores/gameStore';
 import { Game } from '../types';
@@ -28,29 +28,48 @@ import { CachedImage } from './CachedImage';
 import Fuse from 'fuse.js';
 import { useUIStore } from '../stores/uiStore';
 import { getDominantColor } from '../utils/colorUtils';
+import { Skeleton } from './Skeleton';
 
 const GameGrid: React.FC = () => {
-    const { games, collections, selectedCollectionId, setSelectedCollectionId, loadGames, launchGame, toggleFavorite, reorderGames, saveGameOrder, syncLibrary, isLoading } = useGameStore();
+    const { games, collections, selectedCollectionId, setSelectedCollectionId, loadGames, launchGame, toggleFavorite, reorderGames, mergeGames, isLoading } = useGameStore();
     const { setDynamicAccentColor, selectedGame, setSelectedGame } = useUIStore(); // UI Store
     const [activeTab, setActiveTab] = useState('ALL GAMES');
 
-    const [searchQuery, setSearchQuery] = useState('');
+    // Sync activeTab with selectedCollectionId from store (e.g. from Collections page navigation)
+    useEffect(() => {
+        if (selectedCollectionId) {
+            setActiveTab(selectedCollectionId);
+        }
+    }, [selectedCollectionId]);
+
+    // When changing tabs manually, update/clear store selection
+    const handleTabChange = (tab: string) => {
+        setActiveTab(tab);
+        if (tab !== 'ALL GAMES' && tab !== 'FAVORITES') {
+            setSelectedCollectionId(tab);
+        } else {
+            setSelectedCollectionId(null);
+        }
+    };
     const [selectedGenre, setSelectedGenre] = useState<string | null>(null);
     const [selectedPlatform, setSelectedPlatform] = useState<string | null>(null);
     const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
+    const [searchQuery, setSearchQuery] = useState('');
     // const [selectedGame, setSelectedGame] = useState<Game | null>(null); // Moved to UI Store
-    const [sortBy] = useState<'name' | 'playtime' | 'lastPlayed' | 'rating' | 'added'>('name');
+    const [sortBy] = useState<'title' | 'playtime' | 'lastPlayed' | 'rating' | 'addedAt'>('title');
     const [sortDirection] = useState<'asc' | 'desc'>('asc');
-    const [showSortMenu, setShowSortMenu] = useState(false);
     const [showFilterPanel, setShowFilterPanel] = useState(false);
-    const [selectedTags] = useState<string[]>([]);
-    const [ratingFilter] = useState<number | null>(null);
     const [contextMenu, setContextMenu] = useState<{ x: number; y: number; game: Game } | null>(null);
     const [editingGame, setEditingGame] = useState<Game | null>(null);
+    
+    // Merge Modal State
+    const [mergeModalOpen, setMergeModalOpen] = useState(false);
+    const [mergingGame, setMergingGame] = useState<Game | null>(null);
+    const [mergeSearch, setMergeSearch] = useState('');
 
     // Advanced Filters
-    const [moodFilter, setMoodFilter] = useState('');
-    const [multiplayerFilter, setMultiplayerFilter] = useState('all'); // all, local, online, coop
+    // const [moodFilter, setMoodFilter] = useState('');
+    // const [multiplayerFilter, setMultiplayerFilter] = useState('all'); // all, local, online, coop
 
     const handleContextMenu = (e: React.MouseEvent, game: Game) => {
         e.preventDefault();
@@ -78,11 +97,18 @@ const GameGrid: React.FC = () => {
         // 2. Filter by Tab/Collection
         if (activeTab === 'FAVORITES') {
             result = result.filter(g => g.isFavorite);
+        } else if (activeTab === 'ARCHIVED') {
+            result = result.filter(g => g.isHidden);
         } else if (activeTab !== 'ALL GAMES') {
             const collection = collections.find(c => c.id === activeTab);
             if (collection) {
                 result = result.filter(g => collection.gameIds.includes(g.id));
             }
+        }
+
+        // Hide hidden games unless in ARCHIVED tab
+        if (activeTab !== 'ARCHIVED') {
+            result = result.filter(g => !g.isHidden);
         }
 
         // 3. Filter by Genre
@@ -95,12 +121,52 @@ const GameGrid: React.FC = () => {
             result = result.filter(g => g.platform === selectedPlatform);
         }
 
+        // 5. Group Merged Games (Duplicate Merging)
+        const groupedGames: Game[] = [];
+        const groupMap = new Map<string, Game[]>();
+
+        // First pass: Group games by group_id
+        result.forEach(game => {
+            if (game.group_id) {
+                if (!groupMap.has(game.group_id)) {
+                    groupMap.set(game.group_id, []);
+                }
+                groupMap.get(game.group_id)?.push(game);
+            } else {
+                groupedGames.push(game);
+            }
+        });
+
+        // Second pass: Select primary game for each group
+        groupMap.forEach((group) => {
+            // Priority: Installed > Favorite > Recent > Playtime
+            const primary = group.reduce((prev, current) => {
+                const prevScore = (prev.status === 'installed' ? 10 : 0) + (prev.isFavorite ? 5 : 0);
+                const currScore = (current.status === 'installed' ? 10 : 0) + (current.isFavorite ? 5 : 0);
+                
+                if (currScore > prevScore) return current;
+                if (currScore < prevScore) return prev;
+                
+                // Tie breaker: Last played
+                const prevDate = new Date(prev.lastPlayed || 0).getTime();
+                const currDate = new Date(current.lastPlayed || 0).getTime();
+                return currDate > prevDate ? current : prev;
+            });
+            
+            // Attach other versions to the primary game object for UI
+            (primary as any)._mergedCount = group.length;
+            
+            groupedGames.push(primary);
+        });
+        
+        result = groupedGames;
+
         // 7. Sorting
         return [...result].sort((a, b) => {
             let valA: any = a[sortBy];
             let valB: any = b[sortBy];
 
-            if (sortBy === 'added' || sortBy === 'lastPlayed') {
+            if (sortBy === 'addedAt' || sortBy === 'lastPlayed') {
                 valA = new Date(valA || 0).getTime();
                 valB = new Date(valB || 0).getTime();
             }
@@ -109,7 +175,7 @@ const GameGrid: React.FC = () => {
             if (valA > valB) return sortDirection === 'asc' ? 1 : -1;
             return 0;
         });
-    }, [games, searchQuery, activeTab, selectedGenre, selectedPlatform, moodFilter, multiplayerFilter, sortBy, sortDirection, fuse, collections]);
+    }, [games, searchQuery, activeTab, selectedGenre, selectedPlatform, sortBy, sortDirection, fuse, collections]);
 
     // Handle Game Selection (for color extraction)
     const handleGameClick = async (game: Game) => {
@@ -139,10 +205,8 @@ const GameGrid: React.FC = () => {
 
     const handleDragEnd = (event: DragEndEvent) => {
         const { active, over } = event;
-        if (active.id !== over?.id) {
-            const oldIndex = games.findIndex((g) => g.id === active.id);
-            const newIndex = games.findIndex((g) => g.id === over?.id);
-            reorderGames(oldIndex, newIndex);
+        if (active.id !== over?.id && over) {
+            reorderGames(active.id as string, over.id as string);
         }
     };
 
@@ -205,10 +269,11 @@ const GameGrid: React.FC = () => {
 
             {/* Tabs */}
             <div className="px-8 pb-4 flex items-center gap-2 overflow-x-auto no-scrollbar">
-                <Chip label="ALL GAMES" active={activeTab === 'ALL GAMES'} onClick={() => setActiveTab('ALL GAMES')} />
-                <Chip label="FAVORITES" active={activeTab === 'FAVORITES'} onClick={() => setActiveTab('FAVORITES')} />
+                <Chip label="ALL GAMES" active={activeTab === 'ALL GAMES'} onClick={() => handleTabChange('ALL GAMES')} />
+                <Chip label="FAVORITES" active={activeTab === 'FAVORITES'} onClick={() => handleTabChange('FAVORITES')} />
+                <Chip label="ARCHIVED" active={activeTab === 'ARCHIVED'} onClick={() => handleTabChange('ARCHIVED')} />
                 {collections.map(c => (
-                    <Chip key={c.id} label={c.name} active={activeTab === c.id} onClick={() => setActiveTab(c.id)} />
+                    <Chip key={c.id} label={c.name} active={activeTab === c.id} onClick={() => handleTabChange(c.id)} />
                 ))}
             </div>
 
@@ -231,56 +296,79 @@ const GameGrid: React.FC = () => {
                                     setActiveTab('ALL GAMES');
                                 }} className="text-blue-400 hover:underline">Clear filters</button>
                             </div>
-                        ) : viewMode === 'grid' ? (
+                        ) : isLoading ? (
                             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-4 p-4 overflow-y-auto">
-                                {filteredGames.map(game => (
-                                    <div key={game.id} className="h-[300px]">
-                                        <SortableGameCard
-                                            game={game}
-                                            onClick={handleGameClick}
-                                            onContextMenu={handleContextMenu}
-                                            toggleFavorite={toggleFavorite}
-                                            launchGame={launchGame}
-                                        />
-                                    </div>
+                                {[...Array(12)].map((_, i) => (
+                                    <Skeleton key={i} className="h-[300px]" />
                                 ))}
                             </div>
-                        ) : (
-                            <div className="flex flex-col gap-2 p-4 overflow-y-auto">
-                                {filteredGames.map(game => (
-                                    <div
-                                        key={game.id}
-                                        className="flex items-center gap-4 p-3 glass-card hover:bg-white/5 rounded-xl cursor-pointer group"
-                                        onClick={() => handleGameClick(game)}
-                                        onContextMenu={(e) => handleContextMenu(e, game)}
-                                    >
-                                        <CachedImage
-                                            src={game.cover}
-                                            alt={game.title}
-                                            className="w-16 h-24 object-cover rounded-lg"
-                                            placeholderSrc="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxIDEiPjxyZWN0IHdpZHRoPSIxIiBoZWlnaHQ9IjEiIGZpbGw9IiMxZTI5M2IiLz48L3N2Zz4="
-                                        />
-                                        <div className="flex-1">
-                                            <h3 className="font-bold text-lg text-white">{game.title}</h3>
-                                            <div className="flex items-center gap-2 text-sm text-gray-400">
-                                                <img src={getPlatformIcon(game.platform)} alt={game.platform} className="w-4 h-4 invert opacity-70" />
-                                                <span>{game.platform}</span>
-                                                <span>•</span>
-                                                <span>{game.playtime ? Math.round(game.playtime / 60) + 'h played' : 'Never played'}</span>
-                                            </div>
-                                        </div>
-                                        <button
-                                            className="p-3 rounded-full bg-white text-black opacity-0 group-hover:opacity-100 transition-opacity"
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                launchGame(game.id);
-                                            }}
+                        ) : viewMode === 'grid' ? (
+                            <motion.div layout className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-4 p-4 overflow-y-auto content-start">
+                                <AnimatePresence mode='popLayout'>
+                                    {filteredGames.map(game => (
+                                        <motion.div
+                                            layout
+                                            key={game.id}
+                                            initial={{ opacity: 0, scale: 0.9 }}
+                                            animate={{ opacity: 1, scale: 1 }}
+                                            exit={{ opacity: 0, scale: 0.9 }}
+                                            transition={{ duration: 0.2 }}
+                                            className="h-[300px]"
                                         >
-                                            <Play size={20} fill="currentColor" />
-                                        </button>
-                                    </div>
-                                ))}
-                            </div>
+                                            <SortableGameCard
+                                                game={game}
+                                                onClick={handleGameClick}
+                                                onContextMenu={handleContextMenu}
+                                                toggleFavorite={toggleFavorite}
+                                                launchGame={launchGame}
+                                            />
+                                        </motion.div>
+                                    ))}
+                                </AnimatePresence>
+                            </motion.div>
+                        ) : (
+                            <motion.div layout className="flex flex-col gap-2 p-4 overflow-y-auto">
+                                <AnimatePresence mode='popLayout'>
+                                    {filteredGames.map(game => (
+                                        <motion.div
+                                            layout
+                                            key={game.id}
+                                            initial={{ opacity: 0, y: 20 }}
+                                            animate={{ opacity: 1, y: 0 }}
+                                            exit={{ opacity: 0, y: -20 }}
+                                            transition={{ duration: 0.2 }}
+                                            className="flex items-center gap-4 p-3 glass-card hover:bg-white/5 rounded-xl cursor-pointer group"
+                                            onClick={() => handleGameClick(game)}
+                                            onContextMenu={(e) => handleContextMenu(e, game)}
+                                        >
+                                            <CachedImage
+                                                src={game.cover || ''}
+                                                alt={game.title}
+                                                className="w-16 h-24 object-cover rounded-lg"
+                                                placeholderSrc="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxIDEiPjxyZWN0IHdpZHRoPSIxIiBoZWlnaHQ9IjEiIGZpbGw9IiMxZTI5M2IiLz48L3N2Zz4="
+                                            />
+                                            <div className="flex-1">
+                                                <h3 className="font-bold text-lg text-white">{game.title}</h3>
+                                                <div className="flex items-center gap-2 text-sm text-gray-400">
+                                                    <img src={getPlatformIcon(game.platform)} alt={game.platform} className="w-4 h-4 invert opacity-70" />
+                                                    <span>{game.platform}</span>
+                                                    <span>•</span>
+                                                    <span>{game.playtime ? Math.round(game.playtime / 60) + 'h played' : 'Never played'}</span>
+                                                </div>
+                                            </div>
+                                            <button
+                                                className="p-3 rounded-full bg-white text-black opacity-0 group-hover:opacity-100 transition-opacity"
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    launchGame(game.id);
+                                                }}
+                                            >
+                                                <Play size={20} fill="currentColor" />
+                                            </button>
+                                        </motion.div>
+                                    ))}
+                                </AnimatePresence>
+                            </motion.div>
                         )}
                     </SortableContext>
                 </DndContext>
@@ -305,6 +393,10 @@ const GameGrid: React.FC = () => {
                     y={contextMenu.y}
                     onClose={() => setContextMenu(null)}
                     onEdit={() => setEditingGame(contextMenu.game)}
+                    onMerge={() => {
+                        setMergingGame(contextMenu.game);
+                        setMergeModalOpen(true);
+                    }}
                 />
             )}
 
@@ -313,6 +405,59 @@ const GameGrid: React.FC = () => {
                     game={editingGame}
                     onClose={() => setEditingGame(null)}
                 />
+            )}
+
+            {/* Merge Game Modal */}
+            {mergeModalOpen && mergingGame && (
+                <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4" onClick={() => setMergeModalOpen(false)}>
+                    <div className="bg-slate-900 rounded-xl border border-white/10 p-6 w-full max-w-lg" onClick={e => e.stopPropagation()}>
+                        <h3 className="text-xl font-bold text-white mb-4">Merge "{mergingGame.title}" with...</h3>
+                        <p className="text-sm text-gray-400 mb-4">Select a duplicate game to merge into this one. The selected game will be hidden and grouped under "{mergingGame.title}".</p>
+                        
+                        <div className="relative mb-4">
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" size={18} />
+                            <input 
+                                type="text" 
+                                placeholder="Search games to merge..." 
+                                className="w-full bg-black/30 border border-white/10 rounded-lg pl-10 pr-4 py-2 text-white focus:border-purple-500 outline-none"
+                                onChange={(e) => setMergeSearch(e.target.value)}
+                                autoFocus
+                            />
+                        </div>
+                        
+                        <div className="max-h-60 overflow-y-auto space-y-2 pr-1 custom-scrollbar">
+                            {games
+                                .filter(g => g.id !== mergingGame.id && !g.isHidden && g.title.toLowerCase().includes(mergeSearch.toLowerCase()))
+                                .slice(0, 20) // Limit results for performance
+                                .map(g => (
+                                <div 
+                                    key={g.id} 
+                                    onClick={async () => {
+                                        await mergeGames(mergingGame.id, g.id);
+                                        setMergeModalOpen(false);
+                                        setMergingGame(null);
+                                    }} 
+                                    className="flex items-center gap-3 p-2 hover:bg-white/10 rounded-lg cursor-pointer transition-colors border border-transparent hover:border-white/5"
+                                >
+                                    <CachedImage src={g.cover || ''} alt={g.title} className="w-10 h-12 object-cover rounded" />
+                                    <div className="flex flex-col">
+                                        <span className="text-white font-medium">{g.title}</span>
+                                        <div className="flex items-center gap-2 text-xs text-gray-400">
+                                            <img src={getPlatformIcon(g.platform)} className="w-3 h-3 invert opacity-70" />
+                                            <span>{g.platform}</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            ))}
+                            {games.filter(g => g.id !== mergingGame.id && !g.isHidden && g.title.toLowerCase().includes(mergeSearch.toLowerCase())).length === 0 && (
+                                <div className="text-center text-gray-500 py-8">No matching games found</div>
+                            )}
+                        </div>
+                         <div className="mt-6 flex justify-end gap-3 pt-4 border-t border-white/5">
+                            <button onClick={() => setMergeModalOpen(false)} className="px-4 py-2 rounded hover:bg-white/10 text-gray-300 transition-colors">Cancel</button>
+                        </div>
+                    </div>
+                </div>
             )}
         </div>
     );
@@ -358,10 +503,11 @@ const SortableGameCard = ({ game, onClick, onContextMenu, toggleFavorite, launch
         >
             {game.cover ? (
                 <CachedImage
-                    src={game.cover}
+                    src={game.cover || ''}
                     alt={game.title}
                     className="w-full h-full object-cover rounded-xl"
                     placeholderSrc="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxIDEiPjxyZWN0IHdpZHRoPSIxIiBoZWlnaHQ9IjEiIGZpbGw9IiMxZTI5M2IiLz48L3N2Zz4="
+                    draggable={false}
                 />
             ) : (
                 <div className="w-full h-full flex items-center justify-center bg-slate-700 text-gray-400 font-bold text-center p-2 rounded-xl">
@@ -369,9 +515,19 @@ const SortableGameCard = ({ game, onClick, onContextMenu, toggleFavorite, launch
                 </div>
             )}
 
-            {/* Platform Icon Badge */}
-            <div className="absolute top-2 right-2 bg-black/60 backdrop-blur-md p-1.5 rounded-full opacity-0 group-hover:opacity-100 transition-opacity">
-                <img src={getPlatformIcon(game.platform)} alt={game.platform} className="w-3 h-3 invert" />
+            {/* Badges Container */}
+            <div className="absolute top-2 right-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-10">
+                 {/* Merged Count Badge */}
+                {(game as any)._mergedCount > 1 && (
+                    <div className="bg-blue-600/80 backdrop-blur-md px-1.5 py-0.5 rounded-md text-[10px] font-bold text-white border border-blue-400/30 shadow-sm">
+                        +{(game as any)._mergedCount - 1}
+                    </div>
+                )}
+                
+                {/* Platform Icon Badge */}
+                <div className="bg-black/60 backdrop-blur-md p-1.5 rounded-full">
+                    <img src={getPlatformIcon(game.platform)} alt={game.platform} className="w-3 h-3 invert" />
+                </div>
             </div>
 
             {/* Favorite Button */}

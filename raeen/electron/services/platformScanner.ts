@@ -20,7 +20,12 @@ export interface ScannedGame {
     executable?: string;
     icon?: string;
     cover?: string;
+    hero?: string;
+    logo?: string;
+    genre?: string;
+    tags?: string[];
     launchOptions?: string;
+    isInstalled?: boolean;
 }
 
 export class PlatformScanner {
@@ -83,15 +88,17 @@ export class PlatformScanner {
 
     async scanManual(): Promise<ScannedGame[]> {
         const manualGames = this.manualGameService.getGames();
-        return manualGames.map(g => ({
+        return manualGames.map((g: any) => ({
             platform: 'manual',
             platformId: g.id,
             title: g.title,
-            installPath: g.installPath,
+            installPath: g.install_path,
             executable: g.executable,
             launchOptions: g.arguments,
-            icon: g.icon,
-            cover: g.cover
+            icon: g.icon_url,
+            cover: g.cover_url,
+            hero: g.background_url,
+            logo: g.logo_url
         }));
     }
 
@@ -116,7 +123,8 @@ export class PlatformScanner {
                 title: g.title,
                 installPath: g.installPath,
                 executable: g.executable,
-                cover: `https://cdn.cloudflare.steamstatic.com/steam/apps/${g.id}/library_600x900.jpg`
+                cover: `https://cdn.cloudflare.steamstatic.com/steam/apps/${g.id}/library_600x900.jpg`,
+                isInstalled: g.installed
             }));
         } catch (e) {
             console.error('Steam scan failed:', e);

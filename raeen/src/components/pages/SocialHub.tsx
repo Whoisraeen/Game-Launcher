@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
-import { Trophy, Users, Search, Calendar, Swords, UserPlus } from 'lucide-react';
+import { Trophy, Users, Calendar, Swords, MessageCircle, Hash, Twitter, Play } from 'lucide-react';
+import BuddyFinder from './BuddyFinder';
 
 const SocialHub: React.FC = () => {
-    const [activeTab, setActiveTab] = useState<'tournaments' | 'buddy-finder'>('tournaments');
+    const [activeTab, setActiveTab] = useState<'tournaments' | 'buddy-finder' | 'web-chat'>('web-chat');
 
     return (
         <div className="flex-1 h-full flex flex-col overflow-hidden p-6 gap-6">
@@ -21,10 +22,65 @@ const SocialHub: React.FC = () => {
                     >
                         Buddy Finder
                     </button>
+                    <button
+                        onClick={() => setActiveTab('web-chat')}
+                        className={`px-4 py-2 rounded-md text-sm font-bold transition-all ${activeTab === 'web-chat' ? 'bg-white/10 text-white shadow-sm' : 'text-gray-500 hover:text-gray-300'}`}
+                    >
+                        Web Chat
+                    </button>
                 </div>
             </div>
 
-            {activeTab === 'tournaments' ? <TournamentSection /> : <BuddyFinderSection />}
+            {activeTab === 'tournaments' && <TournamentSection />}
+            {activeTab === 'buddy-finder' && <BuddyFinder />}
+            {activeTab === 'web-chat' && <WebChatSection />}
+        </div>
+    );
+};
+
+const WebChatSection = () => {
+    const [activeService, setActiveService] = useState('discord');
+    const services = [
+        { id: 'discord', name: 'Discord', url: 'https://discord.com/app', icon: <MessageCircle size={18} /> },
+        { id: 'steam', name: 'Steam Chat', url: 'https://steamcommunity.com/chat', icon: <Users size={18} /> },
+        { id: 'reddit', name: 'Reddit', url: 'https://reddit.com', icon: <Hash size={18} /> },
+        { id: 'twitter', name: 'X (Twitter)', url: 'https://x.com', icon: <Twitter size={18} /> },
+        { id: 'twitch', name: 'Twitch', url: 'https://twitch.tv', icon: <Play size={18} /> }, // Using Play from lucide-react
+        { id: 'whatsapp', name: 'WhatsApp', url: 'https://web.whatsapp.com', icon: <MessageCircle size={18} /> },
+        { id: 'telegram', name: 'Telegram', url: 'https://web.telegram.org', icon: <MessageCircle size={18} /> },
+        { id: 'instagram', name: 'Instagram', url: 'https://instagram.com', icon: <Users size={18} /> },
+    ];
+    
+    return (
+        <div className="flex-1 flex overflow-hidden glass-panel rounded-xl border border-white/10">
+             {/* Sidebar */}
+             <div className="w-48 bg-black/40 border-r border-white/10 flex flex-col pt-4 overflow-y-auto custom-scrollbar">
+                {services.map(s => (
+                    <button 
+                        key={s.id}
+                        onClick={() => setActiveService(s.id)}
+                        className={`flex items-center gap-3 px-4 py-3 transition-colors border-l-2 ${activeService === s.id ? 'bg-white/10 text-white border-blue-500' : 'text-gray-400 hover:bg-white/5 hover:text-white border-transparent'}`}
+                    >
+                        {s.icon}
+                        <span className="font-medium text-sm">{s.name}</span>
+                    </button>
+                ))}
+             </div>
+             {/* Webview Area */}
+             <div className="flex-1 relative bg-slate-900">
+                {services.map(s => (
+                    <div key={s.id} className={`absolute inset-0 ${activeService === s.id ? 'z-10' : 'z-0 opacity-0 pointer-events-none'}`}>
+                        {/* @ts-ignore - webview is an Electron specific tag */}
+                        <webview
+                            src={s.url}
+                            className="w-full h-full"
+                            useragent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+                            allowpopups={true}
+                            partition="persist:social"
+                        />
+                    </div>
+                ))}
+             </div>
         </div>
     );
 };
@@ -98,59 +154,6 @@ const TournamentSection = () => {
                         </div>
                     ))}
                 </div>
-            </div>
-        </div>
-    );
-};
-
-const BuddyFinderSection = () => {
-    return (
-        <div className="flex-1 overflow-y-auto custom-scrollbar">
-            <div className="glass-panel p-6 mb-6">
-                <div className="flex gap-4">
-                    <div className="flex-1 relative">
-                        <Search className="absolute left-3 top-3 text-gray-500" size={18} />
-                        <input
-                            type="text"
-                            placeholder="Find players for..."
-                            className="w-full bg-black/20 border border-white/10 rounded-xl py-2.5 pl-10 pr-4 text-white focus:outline-none focus:border-blue-500/50"
-                        />
-                    </div>
-                    <select className="bg-black/20 border border-white/10 rounded-xl px-4 text-white focus:outline-none">
-                        <option>Any Region</option>
-                        <option>NA East</option>
-                        <option>EU West</option>
-                    </select>
-                    <select className="bg-black/20 border border-white/10 rounded-xl px-4 text-white focus:outline-none">
-                        <option>Any Skill</option>
-                        <option>Casual</option>
-                        <option>Competitive</option>
-                    </select>
-                </div>
-            </div>
-
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                {[1, 2, 3, 4].map(i => (
-                    <div key={i} className="glass-card p-4 flex items-center gap-4">
-                        <div className="w-16 h-16 rounded-full bg-slate-700 flex-shrink-0" />
-                        <div className="flex-1">
-                            <div className="flex justify-between items-start">
-                                <div>
-                                    <h3 className="font-bold text-white text-lg">GamerTag{i}</h3>
-                                    <div className="flex gap-2 mt-1">
-                                        <span className="text-[10px] bg-blue-500/20 text-blue-400 px-2 py-0.5 rounded uppercase font-bold">Apex Legends</span>
-                                        <span className="text-[10px] bg-green-500/20 text-green-400 px-2 py-0.5 rounded uppercase font-bold">Mic ON</span>
-                                    </div>
-                                </div>
-                                <span className="text-xs text-gray-500">2m ago</span>
-                            </div>
-                            <p className="text-sm text-gray-400 mt-2 line-clamp-1">Looking for a third for ranked grind. Platinum rank.</p>
-                        </div>
-                        <button className="p-2 bg-white/10 hover:bg-white/20 rounded-full transition-colors text-white">
-                            <UserPlus size={20} />
-                        </button>
-                    </div>
-                ))}
             </div>
         </div>
     );

@@ -74,7 +74,7 @@ export class AmazonLibrary {
         return undefined;
     }
 
-    getLaunchCommand(gameId: string): string {
+    getLaunchCommand(_gameId: string): string {
         // Amazon Games protocol: amazon-games://play/{productId}
         // But we don't have ProductID easily from folder scan.
         // So we rely on direct executable launch.

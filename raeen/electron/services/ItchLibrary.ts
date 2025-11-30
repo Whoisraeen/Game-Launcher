@@ -1,7 +1,5 @@
 import fs from 'fs';
 import path from 'path';
-import { DriveScanner } from './DriveScanner';
-import { app } from 'electron';
 
 export interface ItchGame {
     id: string;
@@ -106,7 +104,7 @@ export class ItchLibrary {
         return undefined;
     }
 
-    getLaunchCommand(gameId: string): string {
+    getLaunchCommand(_gameId: string): string {
         // Itch doesn't have a simple protocol for launching specific apps via ID easily without the app open.
         // But we store the executable path in our scan, so standard launch works.
         // Return empty to fallback to executable launch.

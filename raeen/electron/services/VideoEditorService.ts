@@ -1,6 +1,5 @@
 import ffmpeg from 'fluent-ffmpeg';
 import ffmpegPath from 'ffmpeg-static';
-import path from 'path';
 import fs from 'fs';
 
 // Set the ffmpeg path
@@ -28,11 +27,11 @@ export class VideoEditorService {
                 return reject(new Error('Video file not found.'));
             }
 
-            ffmpeg.ffprobe(videoPath, (err, metadata) => {
+            ffmpeg.ffprobe(videoPath, (err: any, metadata: any) => {
                 if (err) {
                     return reject(err);
                 }
-                const videoStream = metadata.streams.find(s => s.codec_type === 'video');
+                const videoStream = metadata.streams.find((s: any) => s.codec_type === 'video');
                 if (!videoStream) {
                     return reject(new Error('No video stream found in file.'));
                 }
@@ -80,8 +79,8 @@ export class VideoEditorService {
             command
                 .output(outputPath)
                 .on('end', () => resolve(outputPath))
-                .on('error', (err) => reject(err))
-                .run();
+                .on('error', (err: any) => reject(err))
+                .save(outputPath);
         });
     }
 }

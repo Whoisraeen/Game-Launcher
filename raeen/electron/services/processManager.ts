@@ -80,16 +80,29 @@ export class ProcessManager {
    * 1. Boost Game Priority
    * 2. Throttle (Low Priority) heavy background apps instead of killing them
    */
-  async optimizeSystem(targetGamePid?: number): Promise<string[]> {
+  async optimizeSystem(targetGamePid?: number, targetExecutable?: string): Promise<string[]> {
     const actionsTaken: string[] = [];
 
-    // 1. Set High Priority for the game
+    // 1. Find Game PID if only executable provided
+    if (!targetGamePid && targetExecutable) {
+      const list = await this.getProcessList();
+      const gameProc = list.find(p => p.name.toLowerCase() === targetExecutable.toLowerCase());
+      if (gameProc) {
+        targetGamePid = gameProc.pid;
+      } else {
+        // If not found immediately, it might be starting up.
+        // In a real scenario, we might wait/retry, but for now we proceed with background optimization
+        console.log(`Game process ${targetExecutable} not found yet.`);
+      }
+    }
+
+    // 2. Set High Priority for the game
     if (targetGamePid) {
       const success = await this.setHighPriority(targetGamePid);
       if (success) actionsTaken.push(`🚀 Boosted Game (PID ${targetGamePid}) to HIGH priority`);
     }
 
-    // 2. Find and Throttle Heavy Background Processes (>300MB RAM)
+    // 3. Find and Throttle Heavy Background Processes (>300MB RAM)
     try {
       const processes = await this.getProcessList();
       const heavyProcesses = processes.filter(p => 

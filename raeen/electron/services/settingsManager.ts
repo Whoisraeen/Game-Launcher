@@ -23,10 +23,20 @@ export interface UserSettings {
   integrations: {
     steamApiKey: string;
     steamId: string;
+    discordId?: string;
+    discordEnabled?: boolean;
+    xboxId?: string;
+    epicId?: string;
+    gogId?: string;
   };
   obs: {
     address: string;
     password?: string;
+  };
+  performance: {
+    optimizeOnLaunch: boolean;
+    showOverlay: boolean;
+    targetFps?: number;
   };
 }
 
@@ -53,10 +63,20 @@ const DEFAULT_SETTINGS: UserSettings = {
   integrations: {
     steamApiKey: '',
     steamId: '',
+    discordId: '',
+    discordEnabled: true,
+    xboxId: '',
+    epicId: '',
+    gogId: '',
   },
   obs: {
     address: 'localhost:4444',
     password: '',
+  },
+  performance: {
+    optimizeOnLaunch: false,
+    showOverlay: false,
+    targetFps: 60,
   },
 };
 

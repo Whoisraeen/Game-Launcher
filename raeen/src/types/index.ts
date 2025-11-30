@@ -3,12 +3,14 @@ export interface Game {
     title: string;
     cover?: string;
     heroImage?: string; // Large background for Hero section
+    backgroundVideo?: string; // Path to .webm/.mp4 background video
     logo?: string; // Transparent logo for Hero section
     platform: 'steam' | 'xbox' | 'psn' | 'epic' | 'gog' | 'riot' | 'battlenet' | 'origin' | 'uplay' | 'other';
     platformId?: string;
     status: 'installed' | 'not_installed' | 'updating';
     playStatus?: 'playing' | 'backlog' | 'completed' | 'dropped' | 'none';
     lastPlayed?: Date;
+    addedAt?: Date;
     playtime: number; // in hours
     isFavorite?: boolean;
     isHidden?: boolean;
@@ -19,6 +21,7 @@ export interface Game {
     tags: string[];
     description?: string;
     genre?: string;
+    developer?: string;
     installPath?: string;
     executable?: string;
     launchOptions?: string;
@@ -30,6 +33,7 @@ export interface Game {
         online: boolean;
         coop: boolean;
     };
+    group_id?: string;
 }
 
 export interface Collection {
@@ -52,10 +56,10 @@ export interface Friend {
     id: string;
     username: string;
     avatar: string;
-    status: 'online' | 'offline' | 'playing' | 'away';
+    status: 'online' | 'offline' | 'playing' | 'away' | 'busy';
     activity?: string;
     lastSeen?: string; // For offline users
-    platform?: 'steam' | 'xbox' | 'psn' | 'epic' | 'gog' | 'riot' | 'battlenet';
+    platform?: string;
 }
 
 export interface PlayNextRecommendation {

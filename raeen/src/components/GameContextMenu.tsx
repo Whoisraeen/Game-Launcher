@@ -1,7 +1,7 @@
 import React from 'react';
 import {
     Play, Download, Trash2, Edit, EyeOff, Eye,
-    Folder, Share2, Heart
+    Folder, Share2, Heart, Link
 } from 'lucide-react';
 import { Game } from '../types';
 import { useGameStore } from '../stores/gameStore';
@@ -13,9 +13,10 @@ interface GameContextMenuProps {
     y: number;
     onClose: () => void;
     onEdit: () => void;
+    onMerge: () => void;
 }
 
-export const GameContextMenu: React.FC<GameContextMenuProps> = ({ game, x, y, onClose, onEdit }) => {
+export const GameContextMenu: React.FC<GameContextMenuProps> = ({ game, x, y, onClose, onEdit, onMerge }) => {
     const store = useGameStore();
 
     const handleAction = async (action: () => Promise<void> | void) => {
@@ -53,13 +54,21 @@ export const GameContextMenu: React.FC<GameContextMenuProps> = ({ game, x, y, on
                 }}
                 shortcut="F3"
             />
+            <ContextMenuItem
+                icon={<Link size={16} />}
+                label="Merge..."
+                onClick={() => {
+                    onClose();
+                    onMerge();
+                }}
+            />
 
             <ContextMenuSeparator />
 
             {/* 3. Remove / Hide */}
             <ContextMenuItem
                 icon={game.isHidden ? <Eye size={16} /> : <EyeOff size={16} />}
-                label={game.isHidden ? "Unhide" : "Hide"}
+                label={game.isHidden ? "Unarchive" : "Archive"}
                 onClick={() => handleAction(() => store.toggleHidden(game.id, !game.isHidden))}
             />
             <ContextMenuItem

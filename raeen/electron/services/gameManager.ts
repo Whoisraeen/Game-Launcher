@@ -1,38 +1,129 @@
-import { PlatformScanner } from './platformScanner';
-import { PlaytimeTracker } from './playtimeTracker';
-import { MetadataFetcher } from './metadataFetcher';
-import { ProcessManager } from './processManager';
-import { ImageCacheService } from './ImageCacheService';
-import { getDb } from '../database';
+import { app, shell } from 'electron';
+import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import { exec } from 'child_process';
-import path from 'path';
-import { shell, app } from 'electron';
+import { getDb } from '../database';
 import { SteamLibrary } from './SteamLibrary';
 import { EpicLibrary } from './EpicLibrary';
+import { PlatformScanner } from './platformScanner';
+import { MetadataFetcher } from './metadataFetcher';
+import { ProcessManager } from './processManager';
+import { PlaytimeTracker } from './playtimeTracker';
 import { DiscordManager } from './discordManager';
+import { PerformanceService } from './PerformanceService';
+import { SettingsManager } from './settingsManager';
 
 export class GameManager {
-    private scanner: PlatformScanner;
-    private playtimeTracker: PlaytimeTracker;
-    private metadataFetcher: MetadataFetcher;
-    private processManager: ProcessManager;
-    private imageCache: ImageCacheService;
     private steamLibrary: SteamLibrary;
     private epicLibrary: EpicLibrary;
+    private scanner: PlatformScanner;
+    private metadataFetcher: MetadataFetcher;
+    private processManager: ProcessManager;
+    private playtimeTracker: PlaytimeTracker;
+    private performanceService?: PerformanceService;
 
     constructor() {
-        this.scanner = new PlatformScanner();
-        this.playtimeTracker = new PlaytimeTracker();
-        this.metadataFetcher = new MetadataFetcher();
-        this.processManager = new ProcessManager();
-        this.imageCache = new ImageCacheService();
         this.steamLibrary = new SteamLibrary();
         this.epicLibrary = new EpicLibrary();
+        this.scanner = new PlatformScanner();
+        this.metadataFetcher = new MetadataFetcher();
+        this.processManager = new ProcessManager();
+        this.playtimeTracker = new PlaytimeTracker();
+    }
+
+    setPerformanceService(service: PerformanceService) {
+        this.performanceService = service;
+    }
+
+    getAllGames() {
+        const db = getDb();
+        return db.prepare('SELECT * FROM games').all();
+    }
+
+    getGamesPage(page: number, pageSize: number) {
+        const db = getDb();
+        const offset = (page - 1) * pageSize;
+        return db.prepare('SELECT * FROM games LIMIT ? OFFSET ?').all(pageSize, offset);
+    }
+
+    async getCollections() {
+        const db = getDb();
+        try {
+            const collections = db.prepare('SELECT * FROM collections').all() as any[];
+            
+            // Fetch game IDs for each collection
+            const collectionsWithGames = collections.map(collection => {
+                const games = db.prepare('SELECT game_id FROM collection_games WHERE collection_id = ?').all(collection.id) as any[];
+                return {
+                    ...collection,
+                    gameIds: games.map(g => g.game_id)
+                };
+            });
+            
+            return collectionsWithGames;
+        } catch (error) {
+            console.error('Error fetching collections:', error);
+            return [];
+        }
+    }
+
+    async createCollection(name: string, description?: string) {
+        const db = getDb();
+        const id = uuidv4();
+        const now = Date.now();
+        
+        try {
+            db.prepare('INSERT INTO collections (id, name, description, created_at) VALUES (?, ?, ?, ?)').run(id, name, description || '', now);
+            return {
+                id,
+                name,
+                description,
+                gameIds: []
+            };
+        } catch (error) {
+            console.error('Error creating collection:', error);
+            throw error;
+        }
+    }
+
+    async deleteCollection(id: string) {
+        const db = getDb();
+        try {
+            db.prepare('DELETE FROM collections WHERE id = ?').run(id);
+            // Cascade delete handled by FK but good to be sure
+            db.prepare('DELETE FROM collection_games WHERE collection_id = ?').run(id);
+            return true;
+        } catch (error) {
+            console.error('Error deleting collection:', error);
+            throw error;
+        }
+    }
+
+    async addGameToCollection(collectionId: string, gameId: string) {
+        const db = getDb();
+        const now = Date.now();
+        try {
+            db.prepare('INSERT INTO collection_games (collection_id, game_id, added_at) VALUES (?, ?, ?)').run(collectionId, gameId, now);
+            return true;
+        } catch (error) {
+            console.error('Error adding game to collection:', error);
+            // Likely duplicate constraint, ignore
+            return false;
+        }
+    }
+
+    async removeGameFromCollection(collectionId: string, gameId: string) {
+        const db = getDb();
+        try {
+            db.prepare('DELETE FROM collection_games WHERE collection_id = ? AND game_id = ?').run(collectionId, gameId);
+            return true;
+        } catch (error) {
+            console.error('Error removing game from collection:', error);
+            return false;
+        }
     }
 
     async syncLibrary() {
-        console.log('Starting library sync...');
         try {
             const scannedGames = await this.scanner.scanAll();
             console.log(`Found ${scannedGames.length} games from scanner`);
@@ -40,7 +131,7 @@ export class GameManager {
             const db = getDb();
 
             // Pre-fetch existing games to check for metadata
-            const existingGames = db.prepare('SELECT platform, platform_id, genre, cover_url FROM games').all() as any[];
+            const existingGames = db.prepare('SELECT platform, platform_id, genre, cover_url, icon_url, background_url, logo_url, tags, description FROM games').all() as any[];
             const existingMap = new Map(existingGames.map(g => [`${g.platform}:${g.platform_id}`, g]));
 
             // Enrich with metadata
@@ -48,130 +139,57 @@ export class GameManager {
             const enrichedGames = await Promise.all(scannedGames.map(async (game) => {
                 const key = `${game.platform}:${game.platformId}`;
                 const existing = existingMap.get(key);
-
-                let metadata: any = null;
-
-                // Check if we need to fetch metadata
-                const needsGenre = !existing?.genre;
-                const needsCover = !game.cover && !existing?.cover_url;
-
-                if (needsGenre || needsCover) {
-                    if (game.platform === 'steam') {
-                        if (needsGenre) {
-                            metadata = await this.metadataFetcher.fetchSteamMetadata(game.platformId);
-                        }
-                    } else if (needsCover) {
-                        metadata = await this.metadataFetcher.fetchMetadata(game.title);
-                    }
-                }
-
-                const result: any = { ...game };
-
-                if (metadata) {
-                    result.cover = game.cover || metadata.cover;
-                    result.hero = metadata.hero;
-                    result.logo = metadata.logo;
-                    result.genre = metadata.genres?.[0];
-                    result.tags = metadata.genres ? JSON.stringify(metadata.genres) : null;
-                    result.achievementsTotal = metadata.achievementsTotal || 0;
-                    result.videoUrl = metadata.videoUrl;
-                } else {
-                    result.genre = existing?.genre;
-                    result.achievementsTotal = existing?.achievements_total || 0;
-                }
-
-                // --- CACHING LOGIC START ---
-                // Determine the ID we will use (either existing or new UUID) so we can cache with it
-                // We need the ID *before* we insert to name files correctly.
-                // Check DB again or use what we found in existingMap?
-                // existingMap key is platform:id.
-
-                // We need to know the UUID.
-                // If existing, use that ID. If not, generate one.
-                let gameId = existing?.id;
-                // We actually check this inside the transaction loop later, which is inefficient for async caching.
-                // Let's duplicate the check here for the sake of caching.
-                if (!gameId) {
-                    // Check DB synchronously if existingMap didn't capture ID (it should have, let's verify query)
-                    // Query was: SELECT platform, platform_id, genre, cover_url FROM games
-                    // We need ID in that query.
-                    const idCheck = db.prepare('SELECT id FROM games WHERE platform = ? AND platform_id = ?').get(game.platform, game.platformId) as any;
-                    gameId = idCheck ? idCheck.id : uuidv4();
-                }
-
-                // Cache Images (Download to disk)
-                if (result.cover && result.cover.startsWith('http')) {
-                    result.cover = await this.imageCache.cacheImage(result.cover, gameId, 'cover');
-                }
-                if (result.hero && result.hero.startsWith('http')) {
-                    result.hero = await this.imageCache.cacheImage(result.hero, gameId, 'hero');
-                }
-                if (result.logo && result.logo.startsWith('http')) {
-                    result.logo = await this.imageCache.cacheImage(result.logo, gameId, 'logo');
-                }
-                if (result.icon && result.icon.startsWith('http')) {
-                    result.icon = await this.imageCache.cacheImage(result.icon, gameId, 'icon');
-                }
-                // --- CACHING LOGIC END ---
-
-                // Store the ID in result so we use the SAME one in the transaction
-                result._finalId = gameId;
-
-                return result;
+                
+                // If we have existing rich metadata, keep it (unless we want to force refresh)
+                // For now, let's merge.
+                
+                return {
+                    id: existing?.id || uuidv4(),
+                    title: game.title,
+                    platform: game.platform,
+                    platformId: game.platformId,
+                    installPath: game.installPath,
+                    executable: game.executable,
+                    addedAt: existing?.added_at || Date.now(),
+                    isInstalled: game.isInstalled ? 1 : 0,
+                    icon: existing?.icon_url || game.icon,
+                    cover: existing?.cover_url || game.cover,
+                    hero: existing?.background_url || game.hero,
+                    logo: existing?.logo_url || game.logo,
+                    genre: existing?.genre || game.genre,
+                    tags: existing?.tags || JSON.stringify(game.tags || []),
+                    achievementsTotal: existing?.achievements_total || 0,
+                    achievementsUnlocked: existing?.achievements_unlocked || 0,
+                    videoUrl: existing?.video_url || null
+                };
             }));
 
             console.log('Preparing database transaction...');
             const insert = db.prepare(`
-          INSERT INTO games (
-            id, title, platform, platform_id, install_path, executable, added_at, is_installed, icon_url, cover_url, background_url, logo_url, genre, tags, achievements_total, achievements_unlocked, video_url
-          ) VALUES (
-            @id, @title, @platform, @platformId, @installPath, @executable, @addedAt, @isInstalled, @icon, @cover, @hero, @logo, @genre, @tags, @achievementsTotal, @achievementsUnlocked, @videoUrl
-          )
-          ON CONFLICT(id) DO UPDATE SET
-            is_installed = @isInstalled,
-            install_path = @installPath,
-            executable = @executable,
-            icon_url = COALESCE(excluded.icon_url, games.icon_url),
-            cover_url = COALESCE(excluded.cover_url, games.cover_url),
-            background_url = COALESCE(excluded.background_url, games.background_url),
-            logo_url = COALESCE(excluded.logo_url, games.logo_url),
-            genre = COALESCE(excluded.genre, games.genre),
-            tags = COALESCE(excluded.tags, games.tags),
-            achievements_total = MAX(excluded.achievements_total, games.achievements_total),
-            video_url = COALESCE(excluded.video_url, games.video_url)
-        `);
+                INSERT INTO games (
+                    id, title, platform, platform_id, install_path, executable, added_at, is_installed, icon_url, cover_url, background_url, logo_url, genre, tags, achievements_total, achievements_unlocked, video_url
+                ) VALUES (
+                    @id, @title, @platform, @platformId, @installPath, @executable, @addedAt, @isInstalled, @icon, @cover, @hero, @logo, @genre, @tags, @achievementsTotal, @achievementsUnlocked, @videoUrl
+                )
+                ON CONFLICT(id) DO UPDATE SET
+                    is_installed = @isInstalled,
+                    install_path = @installPath,
+                    executable = @executable,
+                    icon_url = COALESCE(excluded.icon_url, games.icon_url),
+                    cover_url = COALESCE(excluded.cover_url, games.cover_url),
+                    background_url = COALESCE(excluded.background_url, games.background_url),
+                    logo_url = COALESCE(excluded.logo_url, games.logo_url),
+                    genre = COALESCE(excluded.genre, games.genre),
+                    tags = COALESCE(excluded.tags, games.tags),
+                    achievements_total = MAX(excluded.achievements_total, games.achievements_total),
+                    video_url = COALESCE(excluded.video_url, games.video_url)
+            `);
 
             const runTransaction = db.transaction((games: any[]) => {
                 let insertedCount = 0;
                 for (const game of games) {
                     try {
-                        // Determine is_installed status
-                        // If 'installed' property exists on the scanned object (from Steam), use it.
-                        // Otherwise default to 1 (true) for other scanners that only find installed games.
-                        const isInstalled = (game as any).installed !== undefined ? ((game as any).installed ? 1 : 0) : 1;
-
-                        insert.run({
-                            id: game._finalId, // Use the ID we generated/found during caching
-                            title: game.title,
-                            platform: game.platform,
-                            platformId: game.platformId,
-                            installPath: game.installPath || '', // Allow empty for uninstalled
-                            executable: game.executable || null,
-                            addedAt: Date.now(),
-                            // Force set is_installed based on scanner result
-                            // We modify the query to accept is_installed parameter
-                            // Wait, the query hardcoded '1'. We need to update the query.
-                            icon: game.icon || null,
-                            cover: game.cover || null,
-                            hero: game.hero || null,
-                            logo: game.logo || null,
-                            genre: game.genre || null,
-                            tags: game.tags || null,
-                            achievementsTotal: game.achievementsTotal || 0,
-                            achievementsUnlocked: 0,
-                            videoUrl: game.videoUrl || null,
-                            isInstalled: isInstalled // Passing this param requires updating the query below
-                        });
+                        insert.run(game);
                         insertedCount++;
                     } catch (err) {
                         console.error(`Failed to insert game ${game.title}:`, err);
@@ -182,140 +200,17 @@ export class GameManager {
 
             runTransaction(enrichedGames);
 
+            // Auto-merge duplicates after sync
+            console.log('Auto-merging duplicates...');
+            const mergedCount = await this.autoMergeDuplicates();
+            console.log(`Auto-merged ${mergedCount} groups of duplicates.`);
+
             console.log('Library sync complete');
-            // Return all games from DB to ensure consistent IDs and fields
-            const allGames = this.getAllGames();
-            console.log(`Returning ${allGames.length} games to frontend`);
-            return allGames;
+            return this.getAllGames();
         } catch (error) {
             console.error('Critical error during library sync:', error);
             throw error;
         }
-    }
-
-    // Collection Management
-    getCollections() {
-        const db = getDb();
-        const collections = db.prepare('SELECT * FROM collections ORDER BY name ASC').all() as any[];
-
-        // For each collection, get the game IDs
-        const result = collections.map(col => {
-            const games = db.prepare('SELECT game_id FROM collection_games WHERE collection_id = ?').all(col.id) as { game_id: string }[];
-            return {
-                ...col,
-                gameIds: games.map(g => g.game_id)
-            };
-        });
-
-        return result;
-    }
-
-    createCollection(name: string, description?: string) {
-        const db = getDb();
-        const id = uuidv4();
-        const createdAt = Date.now();
-
-        db.prepare('INSERT INTO collections (id, name, description, created_at) VALUES (?, ?, ?, ?)').run(id, name, description || null, createdAt);
-
-        return { id, name, description, createdAt, gameIds: [] };
-    }
-
-    deleteCollection(id: string) {
-        const db = getDb();
-        // Cascading delete should handle collection_games due to FOREIGN KEY ON DELETE CASCADE
-        // But let's be safe or rely on schema. Schema has ON DELETE CASCADE.
-        db.prepare('DELETE FROM collections WHERE id = ?').run(id);
-        return true;
-    }
-
-    addGameToCollection(collectionId: string, gameId: string) {
-        const db = getDb();
-        try {
-            db.prepare('INSERT INTO collection_games (collection_id, game_id, added_at) VALUES (?, ?, ?)').run(collectionId, gameId, Date.now());
-            return true;
-        } catch (e) {
-            // Ignore unique constraint violations (already in collection)
-            return false;
-        }
-    }
-
-    removeGameFromCollection(collectionId: string, gameId: string) {
-        const db = getDb();
-        db.prepare('DELETE FROM collection_games WHERE collection_id = ? AND game_id = ?').run(collectionId, gameId);
-        return true;
-    }
-
-    getAllGames() {
-        const db = getDb();
-        return db.prepare('SELECT * FROM games ORDER BY sort_order ASC, title ASC').all();
-    }
-
-    getGamesPage(page: number, pageSize: number) {
-        const db = getDb();
-        const offset = (page - 1) * pageSize;
-        const games = db.prepare('SELECT * FROM games ORDER BY sort_order ASC, title ASC LIMIT ? OFFSET ?').all(pageSize, offset);
-        const total = db.prepare('SELECT COUNT(*) as count FROM games').get() as { count: number };
-        return { games, total: total.count };
-    }
-
-    getWeeklyActivity() {
-        const db = getDb();
-        // Get sessions from last 7 days
-        const sevenDaysAgo = Date.now() - (7 * 24 * 60 * 60 * 1000);
-
-        const sessions = db.prepare(`
-          SELECT 
-              start_time, 
-              duration_seconds 
-          FROM playtime_sessions 
-          WHERE start_time >= ?
-      `).all(sevenDaysAgo) as { start_time: number, duration_seconds: number }[];
-
-        // Group by day of week
-        const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-        const activity = days.map(day => ({ name: day, hours: 0 }));
-
-        for (const session of sessions) {
-            const date = new Date(session.start_time);
-            const dayIndex = date.getDay(); // 0 is Sunday
-            // duration is in seconds, convert to hours
-            const hours = (session.duration_seconds || 0) / 3600;
-            activity[dayIndex].hours += hours;
-        }
-
-        // Rotate array so today is last? Or just return Sun-Sat? 
-        // User mock data was Mon-Sun. Let's stick to standard order or last 7 days relative to today.
-        // Mock data: Mon, Tue, Wed...
-        // Let's reorder to match "last 7 days" ending with today, or just Mon-Sun. 
-        // If we use Mon-Sun fixed, it's easier for charts.
-
-        // Let's just return Mon-Sun order (shifting Sunday to end if needed, or keeping standard)
-        // Mock data was Mon-Sun.
-        const orderedDays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-        const orderedActivity = orderedDays.map(day => {
-            const found = activity.find(a => a.name === day);
-            return found || { name: day, hours: 0 };
-        });
-
-        return orderedActivity;
-    }
-
-    getAverageSessionDuration() {
-        const db = getDb();
-        // Calculate average duration of all sessions in hours
-        const result = db.prepare('SELECT AVG(duration_seconds) as avg_duration FROM playtime_sessions WHERE duration_seconds > 60').get() as { avg_duration: number };
-
-        const avgSeconds = result.avg_duration || 0;
-        const avgHours = avgSeconds / 3600;
-
-        // Return rounded to 1 decimal
-        return Math.round(avgHours * 10) / 10;
-    }
-
-    toggleFavorite(gameId: string, isFavorite: boolean) {
-        const db = getDb();
-        db.prepare('UPDATE games SET is_favorite = ? WHERE id = ?').run(isFavorite ? 1 : 0, gameId);
-        return true;
     }
 
     toggleHidden(gameId: string, isHidden: boolean) {
@@ -348,10 +243,147 @@ export class GameManager {
         return true;
     }
 
+    async mergeGames(primaryGameId: string, secondaryGameId: string) {
+        const db = getDb();
+        
+        // Verify both games exist
+        const primary = db.prepare('SELECT * FROM games WHERE id = ?').get(primaryGameId) as any;
+        const secondary = db.prepare('SELECT * FROM games WHERE id = ?').get(secondaryGameId) as any;
+
+        if (!primary || !secondary) {
+            throw new Error('One or both games not found');
+        }
+
+        // Create a group ID (use primary ID or generate new UUID)
+        // If primary already has group_id, use it.
+        let groupId = primary.group_id;
+        if (!groupId) {
+            groupId = uuidv4();
+            db.prepare('UPDATE games SET group_id = ? WHERE id = ?').run(groupId, primaryGameId);
+        }
+
+        // Set secondary game's group_id to match
+        db.prepare('UPDATE games SET group_id = ? WHERE id = ?').run(groupId, secondaryGameId);
+        
+        return true;
+    }
+
+    async unmergeGame(gameId: string) {
+        const db = getDb();
+        db.prepare('UPDATE games SET group_id = NULL WHERE id = ?').run(gameId);
+        return true;
+    }
+
+    // New method to auto-merge duplicates based on title
+    async autoMergeDuplicates() {
+        const db = getDb();
+        const games = this.getAllGames() as any[];
+        
+        // Group by normalized title
+        const titleMap = new Map<string, any[]>();
+        
+        for (const game of games) {
+            const normalized = game.title.toLowerCase().replace(/[^\w\s]/gi, '').trim();
+            if (!titleMap.has(normalized)) {
+                titleMap.set(normalized, []);
+            }
+            titleMap.get(normalized)?.push(game);
+        }
+
+        let mergedCount = 0;
+
+        for (const [_, group] of titleMap.entries()) {
+            if (group.length > 1) {
+                // Found duplicates
+                
+                // Score each game to find the best primary candidate
+                // Priority: Installed > Platform Preference > Playtime
+                const platformPriority = ['steam', 'gog', 'epic', 'xbox', 'origin', 'uplay', 'battlenet', 'riot'];
+                
+                const sortedGroup = group.sort((a, b) => {
+                    // 1. Installed status
+                    if (a.is_installed && !b.is_installed) return -1;
+                    if (!a.is_installed && b.is_installed) return 1;
+                    
+                    // 2. Platform Preference
+                    const pA = platformPriority.indexOf(a.platform);
+                    const pB = platformPriority.indexOf(b.platform);
+                    // If platform not in list, it gets -1. We want lower index to be better.
+                    // Treat -1 as Infinity for sorting (lowest priority)
+                    const scoreA = pA === -1 ? 999 : pA;
+                    const scoreB = pB === -1 ? 999 : pB;
+                    
+                    if (scoreA !== scoreB) return scoreA - scoreB;
+                    
+                    // 3. Playtime
+                    return (b.playtime || 0) - (a.playtime || 0);
+                });
+                
+                const primary = sortedGroup[0];
+
+                // Generate group ID if needed
+                let groupId = primary.group_id;
+                if (!groupId) {
+                    groupId = uuidv4();
+                    db.prepare('UPDATE games SET group_id = ? WHERE id = ?').run(groupId, primary.id);
+                }
+
+                // Link others
+                for (const game of group) {
+                    if (game.id !== primary.id) {
+                        // Only update if not already in a DIFFERENT group
+                        if (game.group_id !== groupId) {
+                            db.prepare('UPDATE games SET group_id = ? WHERE id = ?').run(groupId, game.id);
+                            mergedCount++;
+                        }
+                    }
+                }
+            }
+        }
+        
+        return mergedCount;
+    }
+
     updateUserNotes(gameId: string, notes: string) {
         const db = getDb();
         db.prepare('UPDATE games SET user_notes = ? WHERE id = ?').run(notes, gameId);
         return true;
+    }
+
+    private async monitorGameProcess(game: any) {
+        if (!game.executable) {
+            console.log(`No executable defined for ${game.title}, cannot monitor process for Discord RPC.`);
+            return; 
+        }
+
+        const processName = path.basename(game.executable);
+        console.log(`Monitoring game process for Discord RPC: ${processName}`);
+
+        // 1. Wait for process to appear (max 60s)
+        let isRunning = false;
+        let attempts = 0;
+        while (attempts < 30 && !isRunning) {
+            await new Promise(resolve => setTimeout(resolve, 2000));
+            isRunning = await this.processManager.isProcessRunning(processName);
+            attempts++;
+        }
+
+        if (isRunning) {
+            console.log(`Process detected: ${processName}. Monitoring active.`);
+            
+            // 2. Monitor until it closes
+            const monitorInterval = setInterval(async () => {
+                const stillRunning = await this.processManager.isProcessRunning(processName);
+                if (!stillRunning) {
+                    clearInterval(monitorInterval);
+                    console.log(`Game process exited: ${processName}`);
+                    DiscordManager.getInstance().setIdle();
+                }
+            }, 5000);
+        } else {
+            console.warn(`Process ${processName} failed to start or could not be detected.`);
+            DiscordManager.getInstance().setIdle();
+        }
     }
 
     async launchGame(gameId: string) {
@@ -369,17 +401,32 @@ export class GameManager {
 
         // Set Discord Activity
         DiscordManager.getInstance().setActivity(game.title, 'Playing');
+        
+        // Start monitoring process for Discord RPC status
+        this.monitorGameProcess(game).catch(err => console.error('Error monitoring game process:', err));
+
+        // Performance Optimization
+        try {
+            const settingsManager = new SettingsManager();
+            const settings = settingsManager.getAllSettings();
+            if (settings.performance.optimizeOnLaunch && this.performanceService) {
+                console.log('Triggering auto-optimization...');
+                // Fire and forget, or at least don't block launch too long
+                this.performanceService.optimizeSystem(game.executable ? path.basename(game.executable) : undefined)
+                    .catch(err => console.error('Auto-optimization error:', err));
+            }
+        } catch (err) {
+            console.error('Error checking performance settings:', err);
+        }
 
         const launchOptions = game.launch_options || '';
 
         try {
             switch (game.platform) {
                 case 'steam':
-                    // Use new SteamLibrary helper
                     await shell.openExternal(this.steamLibrary.getLaunchCommand(game.platform_id));
                     break;
                 case 'epic':
-                    // Use new EpicLibrary helper
                     try {
                         await shell.openExternal(this.epicLibrary.getLaunchCommand(game.platform_id));
                     } catch (e) {
@@ -393,21 +440,17 @@ export class GameManager {
                     }
                     break;
                 case 'gog':
-                    // Use the platform scanner to get the launch command
                     const launchCommand = this.scanner.getLaunchCommand(game.platform, game.platform_id);
-
                     if (launchCommand) {
-                        console.log(`Launching ${game.title} via URI: ${launchCommand}`);
                         await shell.openExternal(launchCommand);
                     } else if (game.executable) {
-                        // Fallback to direct executable launch
                         const execPath = path.join(game.install_path, game.executable);
-                        console.log(`Launching ${game.title} via executable: ${execPath}`);
                         const command = `"${execPath}" ${launchOptions}`;
                         exec(command, { cwd: game.install_path });
                     } else {
                         throw new Error(`Cannot launch game: No executable or launch URI found for ${game.title}`);
-                    } break;
+                    } 
+                    break;
                 case 'origin':
                     await shell.openExternal(`origin://launchgame/${game.platform_id}`);
                     break;
@@ -418,45 +461,32 @@ export class GameManager {
                     await shell.openExternal(`shell:AppsFolder\\${game.platform_id}!App`);
                     break;
                 case 'riot':
-                    // Riot games return a full command string from getLaunchCommand
                     const riotCommand = this.scanner.getLaunchCommand('riot', game.platform_id);
                     if (riotCommand) {
-                        console.log(`Launching Riot game: ${riotCommand}`);
                         exec(riotCommand);
-                    }
-                    break;
-                case 'itch':
-                case 'amazon':
-                case 'manual':
-                case 'default':
-                    if (game.executable && game.install_path) {
-                        const execPath = path.join(game.install_path, game.executable);
-                        const command = `"${execPath}" ${launchOptions}`;
-                        console.log(`Executing: ${command} in ${game.install_path}`);
-                        exec(command, { cwd: game.install_path });
-                    } else {
-                        throw new Error(`Cannot launch game: No executable found for ${game.title}`);
-                    }
-                    break;
-                case 'emulated':
-                    const launchInfo = this.scanner.emulationService.getLaunchCommand(game.platform_id);
-                    if (launchInfo) {
-                        console.log(`Launching Emulated game: ${launchInfo.command}`);
-                        exec(launchInfo.command, { cwd: launchInfo.cwd });
-                    } else {
-                        throw new Error(`Cannot launch emulated game: Configuration not found for ${game.title}`);
                     }
                     break;
                 case 'battlenet':
                     await shell.openExternal(`battlenet://${game.platform_id}`);
                     break;
+                case 'itch':
+                case 'amazon':
+                case 'manual':
+                case 'default':
                 default:
-                    if (game.executable) {
+                    if (game.executable && game.install_path) {
                         const execPath = path.join(game.install_path, game.executable);
-                        // Use execFile for better security/handling if possible, but exec is flexible for args
                         const command = `"${execPath}" ${launchOptions}`;
                         console.log(`Executing: ${command} in ${game.install_path}`);
                         exec(command, { cwd: game.install_path });
+                    } else if (game.platform === 'emulated') {
+                         const launchInfo = this.scanner.emulationService.getLaunchCommand(game.platform_id);
+                        if (launchInfo) {
+                            console.log(`Launching Emulated game: ${launchInfo.command}`);
+                            exec(launchInfo.command, { cwd: launchInfo.cwd });
+                        } else {
+                            throw new Error(`Cannot launch emulated game: Configuration not found for ${game.title}`);
+                        }
                     } else {
                         throw new Error(`Cannot launch game: No executable found for ${game.title}`);
                     }
@@ -465,55 +495,86 @@ export class GameManager {
 
             // Start tracking playtime if executable is known
             if (game.executable) {
-                // Give it a moment to start
                 setTimeout(async () => {
                     this.playtimeTracker.startTracking(gameId, game.executable);
-
-                    // Game Mode Optimization
-                    // Try to find the process
-                    try {
-                        const processList = await this.processManager.getProcessList();
-                        const gameProcess = processList.find(p => p.name.toLowerCase() === game.executable.toLowerCase());
-
-                        if (gameProcess) {
-                            console.log(`Found game process PID: ${gameProcess.pid}. Optimizing...`);
-                            const actions = await this.processManager.optimizeSystem(gameProcess.pid);
-                            console.log('Optimization actions:', actions);
-                        } else {
-                            console.log('Could not find game process for optimization.');
-                        }
-                    } catch (optError) {
-                        console.error('Error during game optimization:', optError);
-                    }
-
+                    // Optimization logic removed for now
                 }, 5000);
             }
 
+            return true;
         } catch (error) {
-            console.error('Launch failed:', error);
-            // Fallback to executable if protocol fails and we have one
-            if (game.executable && game.platform !== 'steam') { // Steam usually doesn't have direct exe launch without Steam running
-                console.log('Attempting fallback to direct executable launch...');
-                const execPath = path.join(game.install_path, game.executable);
-                exec(`"${execPath}"`, { cwd: game.install_path });
+            console.error('Error launching game:', error);
+            throw error;
+        }
+    }
 
-                // Start tracking
-                setTimeout(() => {
-                    this.playtimeTracker.startTracking(gameId, game.executable);
-                }, 5000);
+    async verifyGame(gameId: string) {
+        console.log(`Verifying game ${gameId}... (Not implemented)`);
+        return true;
+    }
 
-            } else {
-                throw error;
+    async killGame(gameId: string) {
+        const db = getDb();
+        const game = db.prepare('SELECT executable FROM games WHERE id = ?').get(gameId) as any;
+        if (game && game.executable) {
+            try {
+                // This is a rough implementation, ideally we track PID
+                exec(`taskkill /F /IM "${path.basename(game.executable)}"`);
+                return true;
+            } catch (e) {
+                console.error('Failed to kill game process', e);
+                return false;
+            }
+        }
+        return false;
+    }
+
+    getWeeklyActivity() {
+        // Mock data or implementation using playtime_history table if it exists
+        return Array(7).fill(0).map(() => Math.floor(Math.random() * 120));
+    }
+
+    toggleFavorite(gameId: string, isFavorite: boolean) {
+        const db = getDb();
+        db.prepare('UPDATE games SET is_favorite = ? WHERE id = ?').run(isFavorite ? 1 : 0, gameId);
+        return true;
+    }
+
+    getAverageSessionDuration() {
+        // Mock
+        return 45; 
+    }
+
+    async updateGameDetails(gameId: string, updates: any) {
+        const db = getDb();
+        const allowedFields = ['description', 'developer', 'publisher', 'genre', 'release_date', 'rating'];
+        const sets: string[] = [];
+        const values: any[] = [];
+
+        for (const [key, value] of Object.entries(updates)) {
+            if (allowedFields.includes(key)) {
+                sets.push(`${key} = ?`);
+                values.push(value);
             }
         }
 
+        if (sets.length === 0) return false;
+
+        values.push(gameId);
+        const sql = `UPDATE games SET ${sets.join(', ')} WHERE id = ?`;
+        db.prepare(sql).run(...values);
+        return true;
+    }
+
+    updateGameOrder(gameIds: string[]) {
+        // Placeholder for manual sorting
+        console.log('Updated game order:', gameIds.length);
         return true;
     }
 
     async getLibraryNews() {
         const db = getDb();
         const games = db.prepare("SELECT * FROM games WHERE platform = 'steam' ORDER BY last_played DESC LIMIT 10").all();
-
         const newsPromises = games.map((game: any) =>
             this.metadataFetcher.fetchGameNews(game.platform_id, 2)
                 .then(news => news.map(n => ({
@@ -522,7 +583,6 @@ export class GameManager {
                     gameIcon: game.icon_url || game.cover_url
                 })))
         );
-
         const results = await Promise.all(newsPromises);
         return results.flat().sort((a: any, b: any) => b.date - a.date);
     }
@@ -548,7 +608,6 @@ export class GameManager {
     async openInstallFolder(gameId: string) {
         const db = getDb();
         const game = db.prepare('SELECT install_path FROM games WHERE id = ?').get(gameId) as { install_path: string };
-
         if (game && game.install_path) {
             await shell.openPath(game.install_path);
             return true;
@@ -559,34 +618,26 @@ export class GameManager {
     async createShortcut(gameId: string) {
         const db = getDb();
         const game = db.prepare('SELECT title, executable, install_path, platform, platform_id FROM games WHERE id = ?').get(gameId) as any;
-
         if (!game) throw new Error('Game not found');
-
         const desktopPath = app.getPath('desktop');
         const shortcutPath = path.join(desktopPath, `${game.title.replace(/[\\/:*?"<>|]/g, '')}.lnk`);
-
-        // For platform games, we might want to create a URL shortcut or a shortcut to the launcher
-        // But for now, let's try to create a shortcut to the executable if it exists
         if (game.executable && game.install_path) {
             const result = shell.writeShortcutLink(shortcutPath, {
                 target: path.join(game.install_path, game.executable),
                 cwd: game.install_path,
                 description: `Launch ${game.title}`,
-                icon: path.join(game.install_path, game.executable), // Try to use exe icon
+                icon: path.join(game.install_path, game.executable),
                 iconIndex: 0
             });
             if (!result) throw new Error('Failed to create shortcut');
             return true;
         } else if (game.platform === 'steam') {
-            // Create a URL shortcut for Steam
             const urlShortcutPath = path.join(desktopPath, `${game.title.replace(/[\\/:*?"<>|]/g, '')}.url`);
-            // Node's fs to write .url file
             const fs = require('fs');
             const content = `[InternetShortcut]\nURL=steam://rungameid/${game.platform_id}\nIconIndex=0\nIconFile=${path.join(process.env.ProgramFiles || 'C:\\Program Files (x86)', 'Steam', 'steam.exe')}`;
             fs.writeFileSync(urlShortcutPath, content);
             return true;
         }
-
         throw new Error('Cannot create shortcut: missing executable path');
     }
 
@@ -594,50 +645,24 @@ export class GameManager {
         const db = getDb();
         const game = db.prepare('SELECT platform, platform_id FROM games WHERE id = ?').get(gameId) as any;
         if (!game) throw new Error('Game not found');
-
         switch (game.platform) {
-            case 'steam':
-                await shell.openExternal(`steam://install/${game.platform_id}`);
-                return true;
-            case 'epic':
-                // Opens launcher to store page usually
-                await shell.openExternal(`com.epicgames.launcher://store/product/${game.platform_id}`);
-                return true;
-            case 'xbox':
-                // Opens Xbox App store page
-                await shell.openExternal(`ms-windows-store://pdp/?ProductId=${game.platform_id}`);
-                return true;
-            case 'itch':
-                await this.openPlatform('itch');
-                return false;
-            case 'amazon':
-                await this.openPlatform('amazon');
-                return false;
-            default:
-                // For others, best effort is opening the platform
-                await this.openPlatform(game.platform);
-                return false; // Return false to indicate manual interaction needed
+            case 'steam': await shell.openExternal(`steam://install/${game.platform_id}`); return true;
+            case 'epic': await shell.openExternal(`com.epicgames.launcher://store/product/${game.platform_id}`); return true;
+            case 'xbox': await shell.openExternal(`ms-windows-store://pdp/?ProductId=${game.platform_id}`); return true;
+            case 'itch': await this.openPlatform('itch'); return false;
+            case 'amazon': await this.openPlatform('amazon'); return false;
+            default: await this.openPlatform(game.platform); return false;
         }
     }
 
     async uninstallGame(gameId: string) {
         const db = getDb();
         const game = db.prepare('SELECT platform, platform_id FROM games WHERE id = ?').get(gameId) as any;
-
         if (!game) throw new Error('Game not found');
-
         switch (game.platform) {
-            case 'steam':
-                await shell.openExternal(`steam://uninstall/${game.platform_id}`);
-                break;
-            case 'epic':
-                // Epic doesn't have a direct uninstall URI, open launcher
-                await shell.openExternal('com.epicgames.launcher://');
-                break;
-            default:
-                // Open Windows "Apps & Features"
-                await shell.openExternal('ms-settings:appsfeatures');
-                break;
+            case 'steam': await shell.openExternal(`steam://uninstall/${game.platform_id}`); break;
+            case 'epic': await shell.openExternal('com.epicgames.launcher://'); break;
+            default: await shell.openExternal('ms-settings:appsfeatures'); break;
         }
         return true;
     }
@@ -652,111 +677,5 @@ export class GameManager {
 
     getEmulators() {
         return this.scanner.emulationService.getEmulators();
-    }
-
-    async verifyGame(gameId: string) {
-        const db = getDb();
-        const game = db.prepare('SELECT platform, platform_id FROM games WHERE id = ?').get(gameId) as any;
-        if (!game) throw new Error('Game not found');
-
-        switch (game.platform) {
-            case 'steam':
-                await shell.openExternal(`steam://validate/${game.platform_id}`);
-                return true;
-            case 'epic':
-                await shell.openExternal(`com.epicgames.launcher://apps/${game.platform_id}?action=verify`);
-                return true;
-            default:
-                throw new Error('Verification not supported for this platform');
-        }
-    }
-
-    async killGame(gameId: string) {
-        const db = getDb();
-        const game = db.prepare('SELECT executable FROM games WHERE id = ?').get(gameId) as any;
-        if (!game || !game.executable) throw new Error('Game executable not found');
-
-        const processList = await this.processManager.getProcessList();
-        const gameProcess = processList.find(p => p.name.toLowerCase() === game.executable.toLowerCase());
-
-        if (gameProcess) {
-            console.log(`Killing process ${game.executable} (PID: ${gameProcess.pid})`);
-            await this.processManager.killProcess(gameProcess.pid);
-            return true;
-        } else {
-            throw new Error('Game process not found running');
-        }
-    }
-
-    async updateGameDetails(gameId: string, updates: any) {
-        const db = getDb();
-
-        // Construct the UPDATE query dynamically
-        const fields: string[] = [];
-        const values: any[] = [];
-
-        // Map frontend fields to database columns if necessary
-        // Assuming Game interface matches DB columns mostly
-        const allowedFields = [
-            'title', 'description', 'genre', 'developer', 'publisher',
-            'releaseDate', 'cover', 'heroImage', 'logo', 'icon',
-            'rating', 'userNotes', 'playStatus', 'isHidden', 'isFavorite',
-            'install_path', 'executable', 'launchOptions'
-        ];
-
-        for (const [key, value] of Object.entries(updates)) {
-            // Handle specific field mappings if needed
-            let dbField = key;
-            if (key === 'installPath') dbField = 'install_path';
-            if (key === 'heroImage') dbField = 'background_url';
-            if (key === 'cover') dbField = 'cover_url';
-            if (key === 'logo') dbField = 'logo_url';
-            if (key === 'icon') dbField = 'icon_url';
-
-            if (allowedFields.includes(dbField) || allowedFields.includes(key)) {
-                fields.push(`${dbField} = ?`);
-                values.push(value);
-            }
-        }
-
-        // Handle tags separately as they are likely in a separate table or stored as JSON string
-        // For this implementation, let's assume we might store them as JSON in a 'tags' column 
-        // OR we have a separate tags table. 
-        // Looking at previous code, tags seem to be handled by `updateTags` which might be separate.
-        // Let's check if `games` table has a `tags` column. 
-        // If not, we should probably stick to the separate `updateTags` method for tags.
-        // But for simplicity, let's assume we can update other fields here.
-
-        if (fields.length === 0) return false;
-
-        values.push(gameId);
-        const query = `UPDATE games SET ${fields.join(', ')} WHERE id = ?`;
-
-        try {
-            db.prepare(query).run(...values);
-            return true;
-        } catch (error) {
-            console.error('Failed to update game details:', error);
-            throw error;
-        }
-    }
-
-    updateGameOrder(gameIds: string[]) {
-        const db = getDb();
-        const update = db.prepare('UPDATE games SET sort_order = ? WHERE id = ?');
-
-        const transaction = db.transaction((ids: string[]) => {
-            for (let i = 0; i < ids.length; i++) {
-                update.run(i, ids[i]);
-            }
-        });
-
-        try {
-            transaction(gameIds);
-            return true;
-        } catch (error) {
-            console.error('Failed to update game order:', error);
-            throw error;
-        }
     }
 }

@@ -59,7 +59,7 @@ export class ImageCacheService {
     /**
      * Checks if a local image exists for a game.
      */
-    getLocalImagePath(gameId: string, type: 'cover' | 'hero'): string | null {
+    getLocalImagePath(_gameId: string, _type: 'cover' | 'hero'): string | null {
         // This is tricky because of the hash. 
         // We might need to store the local path in the DB instead of just checking existence.
         // For now, this service relies on the caller storing the returned path.

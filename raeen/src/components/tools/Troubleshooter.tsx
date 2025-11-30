@@ -239,13 +239,27 @@ const DriverHealth = () => {
 };
 
 const LogViewer = () => {
+    const [logs, setLogs] = useState<string[]>([
+        "[10:42:15] [INFO] Application started successfully. Version 1.0.0",
+        "[10:42:16] [INFO] Connected to Discord RPC.",
+        "[10:42:18] [WARN] Failed to load cover art for game id: 4421. Using placeholder.",
+        "[10:45:00] [INFO] Game launched: Cyberpunk 2077 (Steam)",
+    ]);
+
+    const refreshLogs = () => {
+        const newLog = `[${new Date().toLocaleTimeString()}] [INFO] Refreshing system status... OK`;
+        setLogs(prev => [...prev, newLog]);
+    };
+
     return (
         <div className="flex flex-col h-full bg-black/40 rounded-xl border border-white/10 overflow-hidden font-mono text-sm">
             <div className="bg-slate-900/80 p-3 border-b border-white/5 flex justify-between items-center">
                 <div className="flex gap-2">
                     <span className="px-2 py-1 bg-white/10 rounded text-gray-300">System</span>
                     <span className="px-2 py-1 bg-blue-600/20 text-blue-400 rounded">Application</span>
-                    <span className="px-2 py-1 bg-white/10 rounded text-gray-300">Security</span>
+                    <button onClick={refreshLogs} className="px-2 py-1 bg-green-600/20 text-green-400 rounded hover:bg-green-600/30 transition-colors flex items-center gap-1">
+                        <RefreshCw size={12} /> Refresh
+                    </button>
                 </div>
                 <div className="relative">
                     <Search size={14} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500" />
@@ -257,31 +271,15 @@ const LogViewer = () => {
                 </div>
             </div>
             <div className="flex-1 overflow-y-auto p-4 space-y-1 text-gray-300">
-                <div className="flex gap-4 hover:bg-white/5 p-1 rounded">
-                    <span className="text-gray-500 select-none">[10:42:15]</span>
-                    <span className="text-blue-400">INFO</span>
-                    <span>Application started successfully. Version 1.0.0</span>
-                </div>
-                <div className="flex gap-4 hover:bg-white/5 p-1 rounded">
-                    <span className="text-gray-500 select-none">[10:42:16]</span>
-                    <span className="text-blue-400">INFO</span>
-                    <span>Connected to Discord RPC.</span>
-                </div>
-                <div className="flex gap-4 hover:bg-white/5 p-1 rounded">
-                    <span className="text-gray-500 select-none">[10:42:18]</span>
-                    <span className="text-yellow-400">WARN</span>
-                    <span>Failed to load cover art for game id: 4421. Using placeholder.</span>
-                </div>
-                <div className="flex gap-4 hover:bg-white/5 p-1 rounded">
-                    <span className="text-gray-500 select-none">[10:45:00]</span>
-                    <span className="text-blue-400">INFO</span>
-                    <span>Game launched: Cyberpunk 2077 (Steam)</span>
-                </div>
-                <div className="flex gap-4 hover:bg-white/5 p-1 rounded">
-                    <span className="text-gray-500 select-none">[12:30:22]</span>
-                    <span className="text-red-500">ERROR</span>
-                    <span>Process terminated unexpectedly. Exit code: 0xC0000005</span>
-                </div>
+                {logs.map((log, i) => (
+                    <div key={i} className="flex gap-4 hover:bg-white/5 p-1 rounded break-all">
+                        <span className="text-gray-500 select-none">{log.split(']')[0]}]</span>
+                        <span className={log.includes('INFO') ? 'text-blue-400' : log.includes('WARN') ? 'text-yellow-400' : 'text-red-500'}>
+                            {log.match(/\[(INFO|WARN|ERROR)\]/)?.[1] || 'MSG'}
+                        </span>
+                        <span>{log.split(']').slice(2).join(']')}</span>
+                    </div>
+                ))}
             </div>
         </div>
     );

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { HardDrive, Archive, AlertTriangle, Trash2, ArrowRight } from 'lucide-react';
+import { HardDrive, Archive, Trash2, ArrowRight } from 'lucide-react';
 import { useGameStore } from '../stores/gameStore';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
 
@@ -32,7 +32,7 @@ const StorageOptimizer: React.FC = () => {
                 drives[drive].count++;
 
                 // Unused logic
-                if ((!game.lastPlayed || game.lastPlayed < sixMonthsAgo) && (game.playtime || 0) > 0) {
+                if ((!game.lastPlayed || new Date(game.lastPlayed).getTime() < sixMonthsAgo) && (game.playtime || 0) > 0) {
                     unused.push(game);
                 }
             }
@@ -65,7 +65,7 @@ const StorageOptimizer: React.FC = () => {
                                 paddingAngle={5}
                                 dataKey="value"
                             >
-                                {data.map((entry, index) => (
+                                {data.map((_, index) => (
                                     <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                                 ))}
                             </Pie>

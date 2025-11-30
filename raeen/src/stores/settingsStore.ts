@@ -2,7 +2,7 @@ import { create } from 'zustand';
 
 // Duplicate of the interface from backend to avoid importing from electron folder
 // In a real monorepo, this would be in a shared package
-interface UserSettings {
+export interface UserSettings {
     general: {
         launchOnStartup: boolean;
         startMinimized: boolean;
@@ -25,10 +25,20 @@ interface UserSettings {
     integrations: {
         steamApiKey: string;
         steamId: string;
+        discordId?: string;
+        discordEnabled?: boolean;
+        xboxId?: string;
+        epicId?: string;
+        gogId?: string;
     };
     obs: {
         address: string;
         password?: string;
+    };
+    performance: {
+        optimizeOnLaunch: boolean;
+        showOverlay: boolean;
+        targetFps?: number;
     };
 }
 

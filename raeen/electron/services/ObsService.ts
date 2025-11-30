@@ -64,7 +64,7 @@ export class ObsService {
         }
 
         try {
-            await this.obs.connect(this.config);
+            await this.obs.connect(this.config.address, this.config.password);
             this.isConnected = true;
             return true;
         } catch (error) {
@@ -89,38 +89,40 @@ export class ObsService {
 
     public async setCurrentScene(sceneName: string): Promise<void> {
         if (!this.isConnected) throw new Error('Not connected to OBS.');
-        await this.obs.call('SetCurrentScene', { 'scene-name': sceneName });
+        await this.obs.call('SetCurrentProgramScene', { 'sceneName': sceneName });
     }
 
     public async getStreamStatus(): Promise<ObsStreamStatus> {
         if (!this.isConnected) throw new Error('Not connected to OBS.');
-        const { streaming, recording, streamTimecode, recTimecode } = await this.obs.call('GetStreamStatus');
+        const streamStatus = await this.obs.call('GetStreamStatus');
+        const recordStatus = await this.obs.call('GetRecordStatus');
+        
         return {
-            isStreaming: streaming,
-            isRecording: recording,
-            streamTimecode: streamTimecode || '00:00:00',
-            recTimecode: recTimecode || '00:00:00',
+            isStreaming: streamStatus.outputActive,
+            isRecording: recordStatus.outputActive,
+            streamTimecode: streamStatus.outputTimecode,
+            recTimecode: recordStatus.outputTimecode
         };
     }
 
     public async startStreaming(): Promise<void> {
         if (!this.isConnected) throw new Error('Not connected to OBS.');
-        await this.obs.call('StartStreaming');
+        await this.obs.call('StartStream');
     }
 
     public async stopStreaming(): Promise<void> {
         if (!this.isConnected) throw new Error('Not connected to OBS.');
-        await this.obs.call('StopStreaming');
+        await this.obs.call('StopStream');
     }
 
     public async startRecording(): Promise<void> {
         if (!this.isConnected) throw new Error('Not connected to OBS.');
-        await this.obs.call('StartRecording');
+        await this.obs.call('StartRecord');
     }
 
     public async stopRecording(): Promise<void> {
         if (!this.isConnected) throw new Error('Not connected to OBS.');
-        await this.obs.call('StopRecording');
+        await this.obs.call('StopRecord');
     }
 
     // You can add more OBS commands here as needed (e.g., toggleSourceVisibility)

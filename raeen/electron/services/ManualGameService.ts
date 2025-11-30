@@ -2,7 +2,6 @@ import { getDb } from '../database';
 import { v4 as uuidv4 } from 'uuid';
 import fs from 'fs';
 import path from 'path';
-import { app } from 'electron';
 
 // Supported extensions for scanning
 const EXTENSIONS = [
@@ -80,5 +79,15 @@ export class ManualGameService {
         });
 
         return id;
+    }
+
+    getGames(): any[] {
+        const db = getDb();
+        try {
+            return db.prepare("SELECT * FROM games WHERE platform = 'manual'").all();
+        } catch (e) {
+            console.error('Failed to fetch manual games:', e);
+            return [];
+        }
     }
 }

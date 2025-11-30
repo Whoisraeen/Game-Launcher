@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Search, Check, Image, Download } from 'lucide-react';
+import { X, Search, Check, Image } from 'lucide-react';
 import { useGameStore } from '../stores/gameStore';
 
 interface EditMetadataModalProps {

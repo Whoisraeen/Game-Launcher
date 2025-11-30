@@ -1,5 +1,4 @@
 import React, { createContext, useContext, useState, useCallback } from 'react';
-import { useGamepad } from '../hooks/useGamepad';
 
 // A simple grid-based navigation system
 // We'll register elements with coordinates (row, col) or simpler ID-based lists.
@@ -33,25 +32,18 @@ export const NavigationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     // In a real app, use something like 'lrud' library
     // Here we will just rely on the components to tell us "next" or use DOM order
 
+    /*
     const moveFocus = (direction: 'Up' | 'Down' | 'Left' | 'Right') => {
         // This is a placeholder. Real spatial nav is complex.
         // Ideally, we dispatch a custom event 'nav-move' and let the active component handle it.
         window.dispatchEvent(new CustomEvent('nav-move', { detail: { direction, current: focusedId } }));
     };
+    */
 
-    useGamepad({
-        onButtonDown: (btn) => {
-            if (['Up', 'Down', 'Left', 'Right'].includes(btn)) {
-                moveFocus(btn as any);
-            }
-            if (btn === 'A') {
-                if (focusedId) {
-                    const el = document.getElementById(focusedId);
-                    el?.click();
-                }
-            }
-        }
-    });
+    // 3. Input Handling
+    // We rely on global event listeners (Keyboard or Custom 'nav-move')
+    // triggered by GamepadMapper or actual Keyboard.
+    // The useGamepad hook here was redundant and caused double-firing.
 
     return (
         <NavigationContext.Provider value={{ focusedId, register, unregister, setFocus: setFocusedId, activeSection, setActiveSection }}>

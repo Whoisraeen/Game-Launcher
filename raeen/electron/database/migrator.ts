@@ -128,6 +128,13 @@ const migrations: Migration[] = [
         up: (db) => {
             db.exec('ALTER TABLE games ADD COLUMN video_url TEXT;');
         }
+    },
+    {
+        version: 3,
+        name: 'add_merged_group_id',
+        up: (db) => {
+            db.exec('ALTER TABLE games ADD COLUMN group_id TEXT;');
+        }
     }
 ];
 

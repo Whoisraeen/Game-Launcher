@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Shuffle, Calendar as CalendarIcon, DollarSign, Clock, TrendingUp, Filter } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Shuffle, Calendar as CalendarIcon, DollarSign, Clock, TrendingUp, Filter, Play } from 'lucide-react';
 import { useGameStore } from '../../stores/gameStore';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 
@@ -56,104 +56,202 @@ const TabButton = ({ active, onClick, icon, label }: { active: boolean, onClick:
 );
 
 const GameRandomizer = ({ games }: { games: any[] }) => {
-    const [suggestedGame, setSuggestedGame] = useState<any | null>(null);
-    const [isSpinning, setIsSpinning] = useState(false);
+    const [step, setStep] = useState(0);
     const [filters, setFilters] = useState({
-        genre: 'All',
-        time: 'Any', // Short (< 2h), Medium (2-10h), Long (> 10h)
+        time: 'Any',
         mood: 'Any'
     });
+    const [suggestedGame, setSuggestedGame] = useState<any | null>(null);
+    const [hltbData, setHltbData] = useState<any | null>(null);
+    const [isSpinning, setIsSpinning] = useState(false);
 
-    const handleSpin = () => {
-        setIsSpinning(true);
+    const reset = () => {
+        setStep(0);
+        setFilters({ time: 'Any', mood: 'Any' });
         setSuggestedGame(null);
+        setHltbData(null);
+    };
 
-        // Simulate spinning effect
-        setTimeout(() => {
-            const filtered = games.filter(g => {
-                if (filters.genre !== 'All' && g.genre !== filters.genre) return false;
-                // Add more logic for time/mood if metadata exists
-                return true;
-            });
+    const handleTimeSelect = (time: string) => {
+        setFilters(prev => ({ ...prev, time }));
+        setStep(1);
+    };
 
-            if (filtered.length > 0) {
-                const random = filtered[Math.floor(Math.random() * filtered.length)];
-                setSuggestedGame(random);
+    const handleMoodSelect = (mood: string) => {
+        const newFilters = { ...filters, mood };
+        setFilters(newFilters);
+        findGame(newFilters);
+        setStep(2);
+    };
+
+    const findGame = async (currentFilters: typeof filters) => {
+        setIsSpinning(true);
+        
+        // Artificial delay for "thinking" effect
+        await new Promise(resolve => setTimeout(resolve, 1500));
+
+        try {
+            let result: any = null;
+
+            if (currentFilters.mood !== 'Any') {
+                // Use AI-powered recommendation engine
+                const recommendations = await window.ipcRenderer.invoke('games:getMoodRecommendations', currentFilters.mood, currentFilters.time);
+                
+                if (recommendations && recommendations.length > 0) {
+                    // Pick random from top results to keep it fresh
+                    result = recommendations[Math.floor(Math.random() * Math.min(recommendations.length, 3))];
+                }
+            } else {
+                // Simple randomizer if no mood selected
+                const filtered = games.filter(g => g.isInstalled && !g.isHidden);
+                if (filtered.length > 0) {
+                    result = filtered[Math.floor(Math.random() * filtered.length)];
+                }
             }
+            
+            if (result) {
+                setSuggestedGame(result);
+                // Fetch HLTB data
+                try {
+                    const hltb = await window.ipcRenderer.invoke('games:hltbSearch', result.title);
+                    setHltbData(hltb);
+                } catch (e) {
+                    console.error('Failed to fetch HLTB data', e);
+                }
+            } else {
+                setSuggestedGame(null);
+            }
+        } catch (error) {
+            console.error("Failed to get recommendations", error);
+            setSuggestedGame(null);
+        } finally {
             setIsSpinning(false);
-        }, 1500);
+        }
+    };
+
+    const launchGame = async () => {
+        if (suggestedGame) {
+            try {
+                await window.ipcRenderer.invoke('games:launch', suggestedGame.id);
+            } catch (error) {
+                console.error("Failed to launch game", error);
+            }
+        }
     };
 
     return (
-        <div className="max-w-4xl mx-auto text-center space-y-12 py-10">
-            <div className="space-y-4">
-                <h2 className="text-4xl font-bold text-white">What should I play today?</h2>
-                <p className="text-xl text-gray-400">Let the algorithm decide your next adventure.</p>
-            </div>
-
-            <div className="flex justify-center gap-4">
-                <select
-                    className="bg-black/20 border border-white/10 rounded-lg px-4 py-2 text-white focus:outline-none"
-                    value={filters.genre}
-                    onChange={(e) => setFilters({ ...filters, genre: e.target.value })}
-                >
-                    <option value="All">All Genres</option>
-                    <option value="Action">Action</option>
-                    <option value="RPG">RPG</option>
-                    <option value="Strategy">Strategy</option>
-                </select>
-                <select
-                    className="bg-black/20 border border-white/10 rounded-lg px-4 py-2 text-white focus:outline-none"
-                    value={filters.time}
-                    onChange={(e) => setFilters({ ...filters, time: e.target.value })}
-                >
-                    <option value="Any">Any Duration</option>
-                    <option value="Short">Short Session (&lt; 30m)</option>
-                    <option value="Long">Marathon (&gt; 2h)</option>
-                </select>
-            </div>
-
-            <div className="relative h-64 flex items-center justify-center">
-                {isSpinning ? (
-                    <div className="animate-spin text-blue-500">
-                        <Shuffle size={64} />
+        <div className="max-w-4xl mx-auto text-center space-y-12 py-10 min-h-[400px] flex flex-col justify-center">
+            {step === 0 && (
+                <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                    <h2 className="text-4xl font-bold text-white">How much time do you have?</h2>
+                    <div className="flex flex-wrap justify-center gap-4">
+                        {[
+                            { label: 'Quick Session (< 30m)', value: 'Short', icon: <Clock size={20} /> },
+                            { label: 'A Couple Hours (1-2h)', value: 'Medium', icon: <Clock size={20} /> },
+                            { label: 'Deep Dive (3h+)', value: 'Long', icon: <Clock size={20} /> },
+                            { label: "I'm free all day", value: 'Any', icon: <CalendarIcon size={20} /> }
+                        ].map((opt) => (
+                            <button
+                                key={opt.value}
+                                onClick={() => handleTimeSelect(opt.value)}
+                                className="bg-white/5 hover:bg-white/20 border border-white/10 px-8 py-6 rounded-xl flex flex-col items-center gap-3 transition-all hover:scale-105 w-48"
+                            >
+                                {opt.icon}
+                                <span className="font-bold">{opt.label}</span>
+                            </button>
+                        ))}
                     </div>
-                ) : suggestedGame ? (
-                    <div className="animate-in fade-in zoom-in duration-500 bg-gradient-to-br from-blue-900/50 to-purple-900/50 p-8 rounded-2xl border border-white/10 shadow-2xl max-w-md w-full">
-                        <img src={suggestedGame.cover || 'https://images.unsplash.com/photo-1550745165-9bc0b252726f?auto=format&fit=crop&q=80&w=2070'} alt={suggestedGame.title} className="w-full h-48 object-cover rounded-lg mb-4 shadow-lg" />
-                        <h3 className="text-2xl font-bold text-white mb-2">{suggestedGame.title}</h3>
-                        <div className="flex justify-center gap-2 mb-6">
-                            <span className="px-2 py-1 bg-black/40 rounded text-xs text-gray-300">{suggestedGame.genre}</span>
-                            <span className="px-2 py-1 bg-black/40 rounded text-xs text-gray-300">PC</span>
-                        </div>
-                        <button className="w-full py-3 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-lg transition-colors">
-                            Launch Game
-                        </button>
-                    </div>
-                ) : (
-                    <div className="text-gray-600 border-2 border-dashed border-gray-700 rounded-2xl p-12 w-full max-w-md flex flex-col items-center">
-                        <Shuffle size={48} className="mb-4 opacity-50" />
-                        <span className="text-lg">Ready to roll?</span>
-                    </div>
-                )}
-            </div>
-
-            {!suggestedGame && !isSpinning && (
-                <button
-                    onClick={handleSpin}
-                    className="px-8 py-4 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white text-lg font-bold rounded-full shadow-lg hover:shadow-blue-500/25 transition-all transform hover:scale-105"
-                >
-                    Spin the Wheel
-                </button>
+                </div>
             )}
 
-            {suggestedGame && !isSpinning && (
-                <button
-                    onClick={handleSpin}
-                    className="text-gray-400 hover:text-white underline"
-                >
-                    Spin Again
-                </button>
+            {step === 1 && (
+                <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                    <h2 className="text-4xl font-bold text-white">What's the vibe?</h2>
+                    <div className="flex flex-wrap justify-center gap-4">
+                        {[
+                            { label: 'Chill / Relaxing', value: 'Chill', color: 'bg-teal-500/20 hover:bg-teal-500/40' },
+                            { label: 'High Octane Action', value: 'Action', color: 'bg-red-500/20 hover:bg-red-500/40' },
+                            { label: 'Deep Story', value: 'Story', color: 'bg-purple-500/20 hover:bg-purple-500/40' },
+                            { label: 'Challenge Me', value: 'Challenge', color: 'bg-orange-500/20 hover:bg-orange-500/40' },
+                            { label: "Surprise Me", value: 'Any', color: 'bg-gray-500/20 hover:bg-gray-500/40' }
+                        ].map((opt) => (
+                            <button
+                                key={opt.value}
+                                onClick={() => handleMoodSelect(opt.value)}
+                                className={`${opt.color} border border-white/10 px-8 py-6 rounded-xl flex flex-col items-center gap-3 transition-all hover:scale-105 w-48`}
+                            >
+                                <span className="font-bold text-lg">{opt.label}</span>
+                            </button>
+                        ))}
+                    </div>
+                    <button onClick={() => setStep(0)} className="text-gray-500 hover:text-white text-sm">Back</button>
+                </div>
+            )}
+
+            {step === 2 && (
+                <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                    {isSpinning ? (
+                        <div className="flex flex-col items-center justify-center h-64">
+                            <div className="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-4"></div>
+                            <p className="text-xl text-gray-400 animate-pulse">Consulting the oracle...</p>
+                        </div>
+                    ) : suggestedGame ? (
+                        <div className="flex flex-col items-center gap-6">
+                            <h2 className="text-2xl text-gray-400">You should play...</h2>
+                            <div className="relative group cursor-pointer">
+                                <div className="absolute -inset-1 bg-gradient-to-r from-blue-600 to-purple-600 rounded-xl blur opacity-75 group-hover:opacity-100 transition duration-1000 group-hover:duration-200"></div>
+                                <div className="relative w-64 h-96 rounded-xl overflow-hidden shadow-2xl">
+                                    <img src={suggestedGame.cover} alt={suggestedGame.title} className="w-full h-full object-cover" />
+                                    <div className="absolute inset-0 bg-gradient-to-t from-black/80 to-transparent flex items-end p-4">
+                                        <h1 className="text-2xl font-black text-white leading-none">{suggestedGame.title}</h1>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            {hltbData && (
+                                <div className="flex gap-6 bg-black/20 p-4 rounded-xl backdrop-blur-sm border border-white/5 animate-in fade-in zoom-in duration-300">
+                                    <div className="text-center">
+                                        <p className="text-xs text-gray-400 uppercase tracking-wider">Main Story</p>
+                                        <p className="text-xl font-bold text-white">{hltbData.gameplayMain}h</p>
+                                    </div>
+                                    <div className="w-px bg-white/10"></div>
+                                    <div className="text-center">
+                                        <p className="text-xs text-gray-400 uppercase tracking-wider">Main + Extra</p>
+                                        <p className="text-xl font-bold text-white">{hltbData.gameplayMainExtra}h</p>
+                                    </div>
+                                    <div className="w-px bg-white/10"></div>
+                                    <div className="text-center">
+                                        <p className="text-xs text-gray-400 uppercase tracking-wider">Completionist</p>
+                                        <p className="text-xl font-bold text-white">{hltbData.gameplayCompletionist}h</p>
+                                    </div>
+                                </div>
+                            )}
+
+                            <div className="flex gap-4">
+                                <button 
+                                    onClick={reset}
+                                    className="px-6 py-2 rounded-full bg-white/10 hover:bg-white/20 text-white font-bold transition-colors"
+                                >
+                                    Try Again
+                                </button>
+                                <button onClick={launchGame} className="px-8 py-2 rounded-full bg-white text-black font-bold hover:bg-gray-200 transition-colors shadow-lg flex items-center gap-2">
+                                    <Play size={18} fill="black" /> Launch
+                                </button>
+                            </div>
+                        </div>
+                    ) : (
+                        <div className="space-y-4">
+                            <h2 className="text-2xl font-bold text-white">No matching games found.</h2>
+                            <p className="text-gray-400">Try different filters or expand your library!</p>
+                            <button 
+                                onClick={reset}
+                                className="px-6 py-2 rounded-full bg-white/10 hover:bg-white/20 text-white font-bold transition-colors"
+                            >
+                                Start Over
+                            </button>
+                        </div>
+                    )}
+                </div>
             )}
         </div>
     );
@@ -162,6 +260,31 @@ const GameRandomizer = ({ games }: { games: any[] }) => {
 const SessionPlanner = () => {
     // Mock calendar data
     const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const [events, setEvents] = useState<Record<string, string>>({});
+
+    useEffect(() => {
+        const saved = localStorage.getItem('raeen_planner_events');
+        if (saved) {
+            setEvents(JSON.parse(saved));
+        }
+    }, []);
+
+    const handleDayClick = (dayIndex: number) => {
+        const title = prompt("Enter session plan (e.g. 'Raid Night @ 8pm'):");
+        if (title) {
+            const newEvents = { ...events, [dayIndex]: title };
+            setEvents(newEvents);
+            localStorage.setItem('raeen_planner_events', JSON.stringify(newEvents));
+        }
+    };
+
+    const removeEvent = (e: React.MouseEvent, dayIndex: number) => {
+        e.stopPropagation();
+        const newEvents = { ...events };
+        delete newEvents[dayIndex];
+        setEvents(newEvents);
+        localStorage.setItem('raeen_planner_events', JSON.stringify(newEvents));
+    }
 
     return (
         <div className="space-y-8">
@@ -178,13 +301,21 @@ const SessionPlanner = () => {
                 ))}
                 {Array.from({ length: 35 }).map((_, i) => {
                     const isToday = i === 14; // Mock today
-                    const hasEvent = [14, 16, 20].includes(i);
+                    const hasEvent = !!events[i];
                     return (
-                        <div key={i} className={`aspect-square rounded-xl border ${isToday ? 'border-blue-500 bg-blue-500/10' : 'border-white/5 bg-black/20'} p-2 relative group hover:border-white/20 transition-colors`}>
+                        <div 
+                            key={i} 
+                            onClick={() => handleDayClick(i)}
+                            className={`aspect-square rounded-xl border cursor-pointer ${isToday ? 'border-blue-500 bg-blue-500/10' : 'border-white/5 bg-black/20'} p-2 relative group hover:border-white/20 transition-colors`}
+                        >
                             <span className={`text-sm ${isToday ? 'text-blue-400 font-bold' : 'text-gray-400'}`}>{i + 1}</span>
                             {hasEvent && (
-                                <div className="mt-2 p-1.5 bg-purple-600/20 border border-purple-500/30 rounded text-[10px] text-purple-200 truncate">
-                                    Raid Night
+                                <div className="mt-2 p-1.5 bg-purple-600/20 border border-purple-500/30 rounded text-[10px] text-purple-200 truncate relative group/event">
+                                    {events[i]}
+                                    <div 
+                                        className="absolute top-0 right-0 bottom-0 left-0 bg-red-500/80 hidden group-hover/event:flex items-center justify-center text-white cursor-pointer"
+                                        onClick={(e) => removeEvent(e, i)}
+                                    >×</div>
                                 </div>
                             )}
                         </div>
@@ -195,20 +326,18 @@ const SessionPlanner = () => {
             <div className="bg-black/20 rounded-xl p-6 border border-white/5">
                 <h3 className="text-lg font-bold text-white mb-4">Upcoming Sessions</h3>
                 <div className="space-y-3">
-                    <div className="flex items-center gap-4 p-3 bg-white/5 rounded-lg">
-                        <div className="p-3 bg-purple-600/20 rounded-lg text-purple-400">
-                            <CalendarIcon size={20} />
+                    {Object.entries(events).map(([day, title]) => (
+                         <div key={day} className="flex items-center gap-4 p-3 bg-white/5 rounded-lg">
+                            <div className="p-3 bg-purple-600/20 rounded-lg text-purple-400">
+                                <CalendarIcon size={20} />
+                            </div>
+                            <div className="flex-1">
+                                <h4 className="text-white font-medium">{title}</h4>
+                                <p className="text-xs text-gray-400">Day {parseInt(day) + 1}</p>
+                            </div>
                         </div>
-                        <div className="flex-1">
-                            <h4 className="text-white font-medium">Destiny 2 Raid</h4>
-                            <p className="text-xs text-gray-400">Today, 8:00 PM - 11:00 PM</p>
-                        </div>
-                        <div className="flex -space-x-2">
-                            <div className="w-8 h-8 rounded-full bg-gray-700 border-2 border-slate-900"></div>
-                            <div className="w-8 h-8 rounded-full bg-gray-600 border-2 border-slate-900"></div>
-                            <div className="w-8 h-8 rounded-full bg-gray-500 border-2 border-slate-900 flex items-center justify-center text-[10px] text-white">+3</div>
-                        </div>
-                    </div>
+                    ))}
+                    {Object.keys(events).length === 0 && <p className="text-gray-500">No sessions planned.</p>}
                 </div>
             </div>
         </div>

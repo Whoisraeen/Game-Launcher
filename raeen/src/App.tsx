@@ -6,10 +6,12 @@ import { useSettingsStore } from './stores/settingsStore';
 import { useGameStore } from './stores/gameStore';
 import { NavigationProvider } from './context/NavigationContext';
 import BigPictureLayout from './components/BigPicture/BigPictureLayout';
-import { useGamepad } from './hooks/useGamepad';
 import { useTheme } from './hooks/useTheme';
 import Overlay from './components/Overlay';
 import { usePerformanceStore } from './stores/performanceStore';
+import ThemeController from './components/ThemeController';
+import GamepadMapper from './components/GamepadMapper';
+import SystemStatus from './components/SystemStatus';
 
 // Pages
 import Library from './components/pages/Library';
@@ -50,15 +52,6 @@ function App() {
     loadGames();
   }, []);
 
-  // Global Gamepad Listener for Guide Button (Home)
-  useGamepad({
-    onButtonDown: (btn) => {
-      if (btn === 'Home') {
-        setIsBigPicture(prev => !prev);
-      }
-    }
-  });
-
   const handleMinimize = () => {
     window.ipcRenderer.minimizeWindow()
   }
@@ -74,7 +67,7 @@ function App() {
   const renderPage = () => {
     switch (activePage) {
       case 'Library': return <Library />;
-      case 'Collections': return <Collections />;
+      case 'Collections': return <Collections onNavigate={setActivePage} />;
       case 'Wishlist': return <Wishlist />;
       case 'Store': return <Store />;
       case 'Friends': return <Friends />;
@@ -95,6 +88,8 @@ function App() {
 
   return (
     <NavigationProvider>
+      <ThemeController />
+      <GamepadMapper onToggleBigPicture={() => setIsBigPicture(prev => !prev)} />
       {isBigPicture ? (
         <BigPictureLayout onExit={() => setIsBigPicture(false)} />
       ) : (
@@ -117,6 +112,7 @@ function App() {
               <span className="text-xs font-bold tracking-widest text-gray-300">RAEEN LAUNCHER</span>
             </div>
             <div className="flex items-center gap-4 no-drag">
+              <SystemStatus />
               <button
                 onClick={() => setIsBigPicture(true)}
                 className="p-1 hover:text-[var(--accent)] transition-colors text-gray-400"

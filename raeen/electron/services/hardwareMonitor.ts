@@ -46,7 +46,8 @@ export class HardwareMonitor {
                 model: g.model,
                 usage: g.utilizationGpu || 0,
                 temp: g.temperatureGpu || 0,
-                vram: g.vram || 0
+                vram: g.vram || 0,
+                driverVersion: g.driverVersion || ''
             }));
 
             // Filter relevant disks (ignore small partitions or special ones if needed, but for now take all)

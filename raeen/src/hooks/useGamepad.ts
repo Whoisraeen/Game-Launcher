@@ -19,7 +19,7 @@ interface UseGamepadOptions {
 export const useGamepad = ({ onButtonDown, threshold = 0.5, throttle = 150 }: UseGamepadOptions = {}) => {
     const [connected, setConnected] = useState(false);
     const lastInputTime = useRef<number>(0);
-    const requestRef = useRef<number>();
+    const requestRef = useRef<number | undefined>(undefined);
     const onButtonDownRef = useRef(onButtonDown);
 
     // Keep ref updated to avoid stale closures in the loop

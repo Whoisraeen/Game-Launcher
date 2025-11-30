@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { Play, Clock, Trophy } from 'lucide-react';
+import { Play, Clock } from 'lucide-react';
 import { useGameStore } from '../stores/gameStore';
 import { useUIStore } from '../stores/uiStore';
 import { getPlatformIcon, getPlatformName } from '../data/LauncherData';
@@ -22,11 +22,22 @@ const HeroSection: React.FC = () => {
 
     if (!lastPlayed) return null;
 
+    const hasVideo = lastPlayed.backgroundVideo || (lastPlayed.heroImage && /\.(mp4|webm)$/i.test(lastPlayed.heroImage));
+
     return (
         <div className="relative h-80 w-full rounded-2xl overflow-hidden shrink-0 group">
-            {/* Background Image with Gradient Overlay */}
+            {/* Background Media */}
             <div className="absolute inset-0">
-                {lastPlayed.heroImage ? (
+                {hasVideo ? (
+                    <video
+                        src={lastPlayed.backgroundVideo || lastPlayed.heroImage}
+                        autoPlay
+                        muted
+                        loop
+                        playsInline
+                        className="w-full h-full object-cover opacity-60 group-hover:scale-105 transition-transform duration-1000"
+                    />
+                ) : lastPlayed.heroImage ? (
                     <CachedImage 
                         src={lastPlayed.heroImage} 
                         alt="Hero Background" 

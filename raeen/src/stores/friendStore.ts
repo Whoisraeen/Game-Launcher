@@ -22,7 +22,7 @@ export const useFriendStore = create<FriendState>((set) => ({
         set({ isLoading: true, error: null });
         try {
             const result = await window.ipcRenderer.invoke('friends:getAll');
-            set({ friends: result, isLoading: false });
+            set({ friends: Array.isArray(result) ? result : [], isLoading: false });
         } catch (error) {
             set({ error: (error as Error).message, isLoading: false });
         }
@@ -66,7 +66,7 @@ export const useFriendStore = create<FriendState>((set) => ({
             await window.ipcRenderer.invoke('friends:sync');
             // Reload all friends to get the latest state including manual ones
             const result = await window.ipcRenderer.invoke('friends:getAll');
-            set({ friends: result, isLoading: false });
+            set({ friends: Array.isArray(result) ? result : [], isLoading: false });
         } catch (error) {
             console.error('Failed to sync friends:', error);
             set({ isLoading: false });

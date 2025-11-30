@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Download, Upload, RefreshCw, FolderOpen, History, Clock, Archive, Play, Trash2, Save, AlertTriangle } from 'lucide-react';
+import { Download, Upload, RefreshCw, FolderOpen, History, Archive, Save, AlertTriangle } from 'lucide-react';
 import { useGameStore } from '../../stores/gameStore';
 
 interface BackupEntry {

@@ -1,19 +1,44 @@
 import React, { useState, useEffect } from 'react';
-import { MoreHorizontal, Plus, MessageCircle, Radio, Gauge, Sliders, Trophy, Cpu, Activity, Zap, Users, RefreshCw } from 'lucide-react';
+import { MoreHorizontal, Plus, MessageCircle, Radio, Gauge, Sliders, Trophy, Cpu, Activity, Zap, Users, RefreshCw, PlayCircle } from 'lucide-react';
 import { getPlatformName } from '../data/LauncherData';
 import { useGameStore } from '../stores/gameStore';
 import { SystemStats, Friend, RecentAchievement } from '../types';
+import FriendChat from './FriendChat';
 
 const RightSidebar: React.FC = () => {
-    const { friends, achievements, loadFriends, loadAchievements, importSteamFriends, openExternal } = useGameStore();
+    const { friends, achievements, games, loadFriends, loadAchievements, importSteamFriends, openExternal } = useGameStore();
     const [stats, setStats] = useState<SystemStats | null>(null);
     const [showFriendsMenu, setShowFriendsMenu] = useState(false);
+    const [activeChatFriend, setActiveChatFriend] = useState<Friend | null>(null);
 
     useEffect(() => {
         loadFriends();
         loadAchievements();
         // Try to import automatically once on load
         importSteamFriends();
+ 
+        // Listen for real-time friend updates
+        const removeListener = window.ipcRenderer.on('friends:update', (newFriends: Friend[]) => {
+            // We could update the store here, or just use a local state if we wanted to bypass the store.
+            // But ideally, we should update the store. Since the store logic is inside a hook, 
+            // we can't easily call store actions from outside without `useGameStore.getState()`.
+            // For now, we'll just trigger a reload of the friends list in the store
+            // or simpler: directly update the store state if we had a setter exposed,
+            // but loadFriends fetches from backend anyway, so let's just use that if the event sends data.
+            
+            // Actually, the event sends the data. We should use it to avoid an extra fetch.
+            // We can use the store's setState if we export it or access it via the hook, but here we are in the component.
+            // A quick hack to update the UI instantly:
+            if (Array.isArray(newFriends)) {
+                useGameStore.setState({ friends: newFriends });
+            } else {
+                console.warn('Received invalid friends update payload:', newFriends);
+            }
+        }) as unknown as () => void;
+
+        return () => {
+            removeListener();
+        };
     }, []);
 
     useEffect(() => {
@@ -54,16 +79,17 @@ const RightSidebar: React.FC = () => {
                         </div>
 
                         <div className="space-y-3">
-                            {friends.map((friend: Friend) => (
-                                <FriendItem
-                                    key={friend.id}
-                                    name={friend.username}
-                                    platform={friend.platform ? getPlatformName(friend.platform) : 'Online'}
-                                    game={friend.activity || (friend.lastSeen ? `Last seen ${friend.lastSeen}` : '')}
-                                    status={friend.status}
-                                    avatar={friend.avatar}
-                                />
-                            ))}
+                            {friends.map((friend: Friend) => {
+                                const isJoinable = !!(friend.status === 'playing' && friend.activity && games.find(g => g.title === friend.activity && g.status === 'installed'));
+                                return (
+                                    <FriendItem
+                                        key={friend.id}
+                                        friend={friend}
+                                        isJoinable={isJoinable}
+                                        onChat={() => setActiveChatFriend(friend)}
+                                    />
+                                );
+                            })}
                         </div>
                     </Section>
 
@@ -187,6 +213,13 @@ const RightSidebar: React.FC = () => {
                 </div>
             </div>
 
+            {activeChatFriend && (
+                <FriendChat
+                    friend={activeChatFriend}
+                    onClose={() => setActiveChatFriend(null)}
+                />
+            )}
+
         </div>
     );
 };
@@ -203,20 +236,62 @@ const Section = ({ title, children, action }: { title: string, children: React.R
     </div>
 );
 
-const FriendItem = ({ name, platform, game, status, avatar }: { name: string, platform: string, game: string, status: string, avatar: string }) => (
-    <div className="flex items-center gap-3 p-2 rounded-lg hover:bg-white/5 cursor-pointer transition-colors group">
-        <div className="relative">
-            <img src={avatar} alt={name} className="w-9 h-9 rounded-full bg-slate-700" />
-            <div className={`absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full border-2 border-slate-900 ${status === 'playing' ? 'bg-purple-500' : 'bg-green-500'}`}></div>
-        </div>
-        <div className="flex-1 overflow-hidden">
-            <div className="flex justify-between items-center">
-                <span className="text-sm font-medium text-white truncate">{name} <span className="text-xs text-gray-500">({platform})</span></span>
+const FriendItem = ({ friend, isJoinable, onChat }: { friend: Friend, isJoinable?: boolean, onChat: () => void }) => {
+    const platformName = friend.platform ? getPlatformName(friend.platform) : 'Online';
+    const gameText = friend.activity || (friend.lastSeen ? `Last seen ${friend.lastSeen}` : '');
+
+    let statusColor = 'bg-gray-500';
+    switch (friend.status) {
+        case 'online': statusColor = 'bg-green-500'; break;
+        case 'playing': statusColor = 'bg-purple-500'; break;
+        case 'busy': statusColor = 'bg-red-500'; break;
+        case 'away': statusColor = 'bg-yellow-500'; break;
+        case 'offline': statusColor = 'bg-gray-500'; break;
+        default: statusColor = 'bg-gray-500';
+    }
+
+    return (
+        <div className="flex items-center gap-3 p-2 rounded-lg hover:bg-white/5 cursor-pointer transition-colors group relative" onClick={onChat}>
+            <div className="relative">
+                <img src={friend.avatar} alt={friend.username} className="w-9 h-9 rounded-full bg-slate-700 object-cover" />
+                <div className={`absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full border-2 border-slate-900 ${statusColor}`}></div>
             </div>
-            <span className="text-xs text-gray-400 truncate block group-hover:text-blue-400 transition-colors">{game}</span>
+            <div className="flex-1 overflow-hidden">
+                <div className="flex justify-between items-center">
+                    <span className="text-sm font-medium text-white truncate">{friend.username} <span className="text-xs text-gray-500">({platformName})</span></span>
+                </div>
+                <span className={`text-xs truncate block transition-colors ${friend.status === 'playing' ? 'text-purple-400' : 'text-gray-400 group-hover:text-blue-400'}`}>
+                    {gameText}
+                </span>
+            </div>
+
+            <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity bg-slate-900/80 rounded p-1 backdrop-blur-sm">
+                {isJoinable && (
+                    <button
+                        className="p-1.5 hover:bg-white/10 rounded text-green-400 hover:text-green-300 transition-colors"
+                        title={`Join ${friend.activity}`}
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            console.log(`Joining ${friend.username} in ${friend.activity}`);
+                        }}
+                    >
+                        <PlayCircle size={14} />
+                    </button>
+                )}
+                <button
+                    className="p-1.5 hover:bg-white/10 rounded text-gray-400 hover:text-white transition-colors"
+                    title="Send Message"
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        onChat();
+                    }}
+                >
+                    <MessageCircle size={14} />
+                </button>
+            </div>
         </div>
-    </div>
-);
+    );
+};
 
 const AchievementItem = ({ game, title, user, icon }: { game: string, title: string, user: string, icon: string }) => (
     <div className="flex items-center gap-3">

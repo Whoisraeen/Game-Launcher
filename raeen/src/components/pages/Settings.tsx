@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Monitor, User, Shield, Keyboard, Bell, Volume2, Database, RefreshCw, FolderOpen, Link } from 'lucide-react';
+import { Monitor, User, Shield, Keyboard, Bell, Volume2, Database, RefreshCw, FolderOpen, Link, Zap } from 'lucide-react';
 import { useSettingsStore, UserSettings } from '../../stores/settingsStore';
 import { useGameStore } from '../../stores/gameStore';
 
@@ -87,6 +87,12 @@ const Settings: React.FC = () => {
                     onClick={() => setActiveSection('General')}
                 />
                 <SettingsNav
+                    icon={<Zap size={18} />}
+                    label="Performance"
+                    active={activeSection === 'Performance'}
+                    onClick={() => setActiveSection('Performance')}
+                />
+                <SettingsNav
                     icon={<Database size={18} />}
                     label="Library"
                     active={activeSection === 'Library'}
@@ -138,6 +144,13 @@ const Settings: React.FC = () => {
 
             {/* Content */}
             <div className="flex-1 h-full overflow-y-auto custom-scrollbar bg-slate-800/30 rounded-2xl border border-white/5 p-8 space-y-8">
+                {activeSection === 'Account' && (
+                    <div>
+                        <h2 className="text-2xl font-bold text-white mb-6">Account</h2>
+                        <SupabaseAuth />
+                    </div>
+                )}
+
                 {activeSection === 'General' && (
                     <div>
                         <h2 className="text-2xl font-bold text-white mb-6">General Settings</h2>
@@ -190,6 +203,41 @@ const Settings: React.FC = () => {
                     </div>
                 )}
 
+                {activeSection === 'Performance' && (
+                    <div>
+                        <h2 className="text-2xl font-bold text-white mb-6">Performance Settings</h2>
+                        <div className="space-y-6">
+                            <SettingGroup title="Optimization">
+                                <Toggle
+                                    label="Optimize System on Game Launch"
+                                    checked={settings.performance.optimizeOnLaunch}
+                                    onChange={(v) => handleToggle('performance', 'optimizeOnLaunch', v)}
+                                />
+                                <p className="text-xs text-gray-500 mt-2">
+                                    Automatically clears RAM and sets high priority for game processes when launching a game.
+                                </p>
+                            </SettingGroup>
+
+                            <SettingGroup title="Overlay">
+                                <Toggle
+                                    label="Show Performance Overlay"
+                                    checked={settings.performance.showOverlay}
+                                    onChange={(v) => handleToggle('performance', 'showOverlay', v)}
+                                />
+                                <div className="flex items-center justify-between py-2 mt-2">
+                                    <span className="text-sm text-gray-300">Target FPS Cap</span>
+                                    <input
+                                        type="number"
+                                        className="bg-black/20 border border-white/10 rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none w-24 text-center"
+                                        value={settings.performance.targetFps || 60}
+                                        onChange={(e) => handleSelect('performance', 'targetFps', e.target.value)}
+                                    />
+                                </div>
+                            </SettingGroup>
+                        </div>
+                    </div>
+                )}
+
                 {activeSection === 'Emulation' && (
                     <div>
                         <h2 className="text-2xl font-bold text-white mb-6">Emulation Settings</h2>
@@ -236,10 +284,30 @@ const Settings: React.FC = () => {
                                     <span className="text-sm text-gray-300">Scan Folder for ROMs</span>
                                     <button
                                         className="flex items-center gap-2 px-3 py-1.5 bg-white/10 hover:bg-white/20 rounded text-xs text-white transition-colors"
-                                        onClick={() => {
-                                            // Logic to open dialog and pass to EmulationService.scanRomFolder
-                                            // This would ideally need a platform selector modal first
-                                            alert("Feature coming soon: Select a platform then a folder to import ROMs.");
+                                        onClick={async () => {
+                                            const path = await window.ipcRenderer.invoke('dialog:openDirectory');
+                                            if (path) {
+                                                 // In a real implementation, we'd save this path to the emulation config
+                                                 // For now, let's just scan it for games as a fallback
+                                                 setIsScanning(true);
+                                                 try {
+                                                     const games = await window.ipcRenderer.invoke('manual:scan', path);
+                                                     if (games.length > 0) {
+                                                         if(confirm(`Found ${games.length} executables. Import them?`)) {
+                                                             for (const g of games) {
+                                                                 await window.ipcRenderer.invoke('manual:add', g.title, g.installPath, g.executable);
+                                                             }
+                                                             loadGames();
+                                                         }
+                                                     } else {
+                                                         alert('No executables found. ROM scanning requires backend configuration.');
+                                                     }
+                                                 } catch(e) {
+                                                     console.error(e);
+                                                 } finally {
+                                                     setIsScanning(false);
+                                                 }
+                                            }
                                         }}
                                     >
                                         <FolderOpen size={14} />
@@ -292,39 +360,7 @@ const Settings: React.FC = () => {
                 {activeSection === 'Account' && (
                     <div>
                         <h2 className="text-2xl font-bold text-white mb-6">Account Settings</h2>
-                        <SettingGroup title="Profile">
-                            <div className="flex items-center justify-between py-2">
-                                <span className="text-sm text-gray-300">Username</span>
-                                <input
-                                    type="text"
-                                    value={settings.account.username}
-                                    onChange={(e) => handleSelect('account', 'username', e.target.value)}
-                                    className="bg-black/20 border border-white/10 rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none focus:border-blue-500"
-                                />
-                            </div>
-                            <div className="flex items-center justify-between py-2">
-                                <span className="text-sm text-gray-300">Avatar URL</span>
-                                <input
-                                    type="text"
-                                    value={settings.account.avatar}
-                                    onChange={(e) => handleSelect('account', 'avatar', e.target.value)}
-                                    className="bg-black/20 border border-white/10 rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none focus:border-blue-500 w-64 truncate"
-                                />
-                            </div>
-                            <div className="flex items-center justify-between py-2">
-                                <span className="text-sm text-gray-300">Status</span>
-                                <select
-                                    className="bg-black/20 border border-white/10 rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none"
-                                    value={settings.account.status}
-                                    onChange={(e) => handleSelect('account', 'status', e.target.value)}
-                                >
-                                    <option value="online">Online</option>
-                                    <option value="away">Away</option>
-                                    <option value="offline">Invisible</option>
-                                    <option value="playing">Playing</option>
-                                </select>
-                            </div>
-                        </SettingGroup>
+                        <SupabaseAuth />
                     </div>
                 )}
 
@@ -339,45 +375,99 @@ const Settings: React.FC = () => {
                                         <div>
                                             <h4 className="text-sm font-medium text-blue-100">Connect Steam Account</h4>
                                             <p className="text-xs text-blue-200/70 mt-1">
-                                                Enter your Steam API Key and ID to sync friends and status in real-time.
-                                                We only use this to fetch public data.
+                                                Enter your Steam ID (64-bit) to fetch your owned games, including uninstalled ones.
+                                                Your profile must be set to Public.
                                             </p>
-                                            <a href="https://steamcommunity.com/dev/apikey" target="_blank" rel="noopener noreferrer" className="text-xs text-blue-400 hover:text-blue-300 hover:underline mt-2 inline-block">
-                                                Get API Key &rarr;
-                                            </a>
                                         </div>
                                     </div>
                                 </div>
-
-                                <div className="space-y-4">
-                                    <div>
-                                        <label className="block text-xs font-medium text-gray-400 mb-1">Steam API Key</label>
-                                        <input
-                                            type="password"
-                                            value={settings.integrations?.steamApiKey || ''}
-                                            onChange={(e) => handleSelect('integrations', 'steamApiKey', e.target.value)}
-                                            className="w-full bg-black/20 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500/50 font-mono placeholder-gray-600"
-                                            placeholder="XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
-                                        />
-                                    </div>
-                                    <div>
-                                        <label className="block text-xs font-medium text-gray-400 mb-1">Steam ID (64-bit)</label>
+                                
+                                <div className="space-y-3">
+                                    <div className="flex flex-col gap-1">
+                                        <label className="text-xs text-gray-400">Steam ID (64-bit)</label>
                                         <input
                                             type="text"
-                                            value={settings.integrations?.steamId || ''}
+                                            value={settings.integrations.steamId}
                                             onChange={(e) => handleSelect('integrations', 'steamId', e.target.value)}
-                                            className="w-full bg-black/20 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500/50 font-mono placeholder-gray-600"
                                             placeholder="76561198000000000"
+                                            className="bg-black/20 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500"
                                         />
-                                        <p className="text-xs text-gray-500 mt-1">
-                                            Find this in your Steam profile URL or use <a href="https://steamid.io" target="_blank" className="text-blue-400 hover:underline">steamid.io</a>
+                                        <p className="text-[10px] text-gray-500">
+                                            Find your Steam ID at <a href="#" className="text-blue-400 hover:underline" onClick={(e) => { e.preventDefault(); window.open('https://steamid.io', '_blank'); }}>steamid.io</a>
                                         </p>
                                     </div>
+                                </div>
+                            </SettingGroup>
+
+                            <SettingGroup title="Other Platforms">
+                                <div className="space-y-4">
+                                    {/* Discord */}
+                                    <div className="flex items-center justify-between py-2 border-b border-white/5">
+                                        <div className="flex items-center gap-3">
+                                            <div className="p-2 bg-[#5865F2]/20 rounded-lg text-[#5865F2]">
+                                                <Monitor size={20} />
+                                            </div>
+                                            <div className="flex flex-col">
+                                                <span className="text-sm text-gray-300 font-medium">Discord</span>
+                                                <span className="text-xs text-gray-500">Rich Presence & Status Updates</span>
+                                            </div>
+                                        </div>
+                                        <div className="flex items-center gap-4">
+                                            <Toggle 
+                                                label="Enable RPC" 
+                                                checked={settings.integrations.discordEnabled !== false}
+                                                onChange={(v) => handleToggle('integrations', 'discordEnabled', v)}
+                                            />
+                                        </div>
+                                    </div>
+
+                                    {/* Epic Games */}
+                                    <PlatformConnection 
+                                        name="Epic Games"
+                                        icon={<Database size={20} />}
+                                        color="text-white"
+                                        bgColor="bg-white/10"
+                                        connectedId={settings.integrations.epicId}
+                                        onConnect={() => {
+                                            const id = prompt("Enter Epic Account ID:");
+                                            if (id) handleSelect('integrations', 'epicId', id);
+                                        }}
+                                        onDisconnect={() => handleSelect('integrations', 'epicId', '')}
+                                    />
+
+                                    {/* GOG */}
+                                    <PlatformConnection 
+                                        name="GOG Galaxy"
+                                        icon={<RefreshCw size={20} />}
+                                        color="text-purple-400"
+                                        bgColor="bg-purple-600/20"
+                                        connectedId={settings.integrations.gogId}
+                                        onConnect={() => {
+                                            const id = prompt("Enter GOG Username:");
+                                            if (id) handleSelect('integrations', 'gogId', id);
+                                        }}
+                                        onDisconnect={() => handleSelect('integrations', 'gogId', '')}
+                                    />
+
+                                    {/* Xbox */}
+                                    <PlatformConnection 
+                                        name="Xbox / Game Pass"
+                                        icon={<Monitor size={20} />} // Using Monitor as generic controller icon substitute
+                                        color="text-green-400"
+                                        bgColor="bg-green-600/20"
+                                        connectedId={settings.integrations.xboxId}
+                                        onConnect={() => {
+                                            const id = prompt("Enter Xbox Gamertag:");
+                                            if (id) handleSelect('integrations', 'xboxId', id);
+                                        }}
+                                        onDisconnect={() => handleSelect('integrations', 'xboxId', '')}
+                                    />
                                 </div>
                             </SettingGroup>
                         </div>
                     </div>
                 )}
+
 
                 {/* Placeholder for other sections */}
                 {!['General', 'Library', 'Account', 'Integrations'].includes(activeSection) && (
@@ -416,6 +506,209 @@ const Toggle = ({ label, checked, onChange }: { label: string, checked?: boolean
         <div className={`w-10 h-6 rounded-full relative transition-colors ${checked ? 'bg-blue-600' : 'bg-slate-700'}`}>
             <div className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-all ${checked ? 'left-5' : 'left-1'}`}></div>
         </div>
+    </div>
+);
+
+import { supabase } from '../../lib/supabase';
+
+const SupabaseAuth = () => {
+    const [session, setSession] = useState<any>(null);
+    const [email, setEmail] = useState('');
+    const [password, setPassword] = useState('');
+    const [username, setUsername] = useState('');
+    const [loading, setLoading] = useState(false);
+    const [view, setView] = useState<'login' | 'signup'>('login');
+    const [error, setError] = useState<string | null>(null);
+
+    useEffect(() => {
+        supabase.auth.getSession().then(({ data: { session } }) => {
+            setSession(session);
+        });
+
+        const {
+            data: { subscription },
+        } = supabase.auth.onAuthStateChange((_event, session) => {
+            setSession(session);
+        });
+
+        return () => subscription.unsubscribe();
+    }, []);
+
+    const handleLogin = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setLoading(true);
+        setError(null);
+        const { error } = await supabase.auth.signInWithPassword({
+            email,
+            password,
+        });
+        if (error) setError(error.message);
+        setLoading(false);
+    };
+
+    const handleSignup = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setLoading(true);
+        setError(null);
+        
+        // 1. Sign Up
+        const { error: authError } = await supabase.auth.signUp({
+            email,
+            password,
+            options: {
+                data: {
+                    full_name: username,
+                },
+            },
+        });
+
+        if (authError) {
+            setError(authError.message);
+            setLoading(false);
+            return;
+        }
+
+        // 2. Create Profile (handled by Trigger, but good to handle manual insert if trigger fails or for immediate feedback)
+        // The trigger 'on_auth_user_created' should handle it.
+        
+        setLoading(false);
+    };
+
+    const handleLogout = async () => {
+        await supabase.auth.signOut();
+    };
+
+    if (session) {
+        return (
+            <div className="p-6 bg-white/5 rounded-xl border border-white/10 space-y-4">
+                <div className="flex items-center gap-4">
+                    <div className="w-16 h-16 bg-blue-600 rounded-full flex items-center justify-center text-2xl font-bold text-white">
+                        {session.user.email?.[0].toUpperCase()}
+                    </div>
+                    <div>
+                        <h3 className="text-xl font-bold text-white">{session.user.user_metadata?.full_name || 'Gamer'}</h3>
+                        <p className="text-sm text-gray-400">{session.user.email}</p>
+                    </div>
+                </div>
+                <div className="pt-4 border-t border-white/10">
+                    <button 
+                        onClick={handleLogout}
+                        className="px-4 py-2 bg-red-500/20 hover:bg-red-500/30 text-red-400 rounded-lg text-sm font-medium transition-colors"
+                    >
+                        Sign Out
+                    </button>
+                </div>
+            </div>
+        );
+    }
+
+    return (
+        <div className="max-w-md mx-auto bg-black/20 p-8 rounded-xl border border-white/10 backdrop-blur-sm">
+            <div className="flex gap-4 mb-6 border-b border-white/10 pb-4">
+                <button 
+                    onClick={() => { setView('login'); setError(null); }}
+                    className={`flex-1 pb-2 text-sm font-bold transition-colors ${view === 'login' ? 'text-blue-400 border-b-2 border-blue-400' : 'text-gray-500 hover:text-gray-300'}`}
+                >
+                    Login
+                </button>
+                <button 
+                    onClick={() => { setView('signup'); setError(null); }}
+                    className={`flex-1 pb-2 text-sm font-bold transition-colors ${view === 'signup' ? 'text-blue-400 border-b-2 border-blue-400' : 'text-gray-500 hover:text-gray-300'}`}
+                >
+                    Sign Up
+                </button>
+            </div>
+
+            <form onSubmit={view === 'login' ? handleLogin : handleSignup} className="space-y-4">
+                {view === 'signup' && (
+                    <div>
+                        <label className="block text-xs text-gray-400 mb-1">Username</label>
+                        <input
+                            type="text"
+                            required
+                            value={username}
+                            onChange={(e) => setUsername(e.target.value)}
+                            className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-blue-500 transition-colors"
+                            placeholder="GamerTag123"
+                        />
+                    </div>
+                )}
+                
+                <div>
+                    <label className="block text-xs text-gray-400 mb-1">Email</label>
+                    <input
+                        type="email"
+                        required
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                        className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-blue-500 transition-colors"
+                        placeholder="you@example.com"
+                    />
+                </div>
+
+                <div>
+                    <label className="block text-xs text-gray-400 mb-1">Password</label>
+                    <input
+                        type="password"
+                        required
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-blue-500 transition-colors"
+                        placeholder="••••••••"
+                    />
+                </div>
+
+                {error && (
+                    <div className="p-3 bg-red-500/20 border border-red-500/50 rounded-lg text-red-200 text-xs">
+                        {error}
+                    </div>
+                )}
+
+                <button
+                    type="submit"
+                    disabled={loading}
+                    className="w-full py-3 bg-blue-600 hover:bg-blue-500 text-white rounded-lg font-bold shadow-lg shadow-blue-600/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                    {loading ? 'Processing...' : (view === 'login' ? 'Sign In' : 'Create Account')}
+                </button>
+            </form>
+        </div>
+    );
+};
+
+const PlatformConnection = ({ name, icon, color, bgColor, connectedId, onConnect, onDisconnect }: {
+    name: string,
+    icon: React.ReactNode,
+    color: string,
+    bgColor: string,
+    connectedId?: string,
+    onConnect: () => void,
+    onDisconnect: () => void
+}) => (
+    <div className="flex items-center justify-between py-2 border-b border-white/5">
+        <div className="flex items-center gap-3">
+            <div className={`p-2 rounded-lg ${bgColor} ${color}`}>
+                {icon}
+            </div>
+            <div className="flex flex-col">
+                <span className="text-sm text-gray-300 font-medium">{name}</span>
+                {connectedId ? (
+                    <span className="text-xs text-green-400 flex items-center gap-1">● Connected as {connectedId}</span>
+                ) : (
+                    <span className="text-xs text-gray-500">Not connected</span>
+                )}
+            </div>
+        </div>
+        <button 
+            onClick={connectedId ? onDisconnect : onConnect}
+            className={`px-3 py-1.5 rounded text-xs font-medium transition-colors ${
+                connectedId 
+                ? 'bg-red-500/10 text-red-400 hover:bg-red-500/20' 
+                : 'bg-blue-600 hover:bg-blue-500 text-white'
+            }`}
+        >
+            {connectedId ? 'Disconnect' : 'Connect'}
+        </button>
     </div>
 );
 

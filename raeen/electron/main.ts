@@ -17,7 +17,10 @@ import { DiscordManager } from './services/discordManager'
 import { PerformanceService } from './services/PerformanceService'
 import { SaveManagerService } from './services/SaveManagerService'
 import { VideoEditorService } from './services/VideoEditorService'
-import { ObsService } from './services/ObsService'
+import { ObsService, ObsConnectionConfig } from './services/ObsService'
+import { RGBService } from './services/RGBService'
+import { FanControlService } from './services/FanControlService'
+import { HLTBService } from './services/HLTBService'
 
 // Configure Logger
 log.initialize();
@@ -42,10 +45,13 @@ let newsManager: NewsManager;
 let recommendationManager: RecommendationManager;
 let imageCacheService: ImageCacheService;
 let manualGameService: ManualGameService;
-let performanceService: PerformanceService;
 let saveManagerService: SaveManagerService;
 let videoEditorService: VideoEditorService;
 let obsService: ObsService;
+let rgbService: RGBService;
+let fanControlService: FanControlService;
+let hltbService: HLTBService;
+let performanceService: PerformanceService;
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -98,32 +104,28 @@ function createOverlayWindow() {
 let overlayInterval: NodeJS.Timeout | null = null;
 
 function startOverlayUpdates() {
-    if (overlayInterval) return;
-    
-    // Send initial update immediately
-    hardwareMonitor.getStats().then(stats => {
-        overlayWin?.webContents.send('overlay:update', stats);
-    });
-
-    overlayInterval = setInterval(async () => {
-        if (overlayWin && overlayWin.isVisible()) {
-            try {
-                const stats = await hardwareMonitor.getStats();
-                overlayWin.webContents.send('overlay:update', stats);
-            } catch (e) {
-                console.error('Failed to update overlay stats:', e);
-            }
-        } else {
-            stopOverlayUpdates();
+  if (overlayInterval) return;
+  overlayInterval = setInterval(async () => {
+    if (overlayWin && !overlayWin.isDestroyed() && overlayWin.isVisible()) {
+      try {
+        if (hardwareMonitor) {
+            const stats = await hardwareMonitor.getStats();
+            overlayWin.webContents.send('overlay:update', stats);
         }
-    }, 2000); // Update every 2 seconds
+      } catch (error) {
+        console.error('Failed to send overlay update:', error);
+      }
+    } else {
+      stopOverlayUpdates();
+    }
+  }, 1000);
 }
 
 function stopOverlayUpdates() {
-    if (overlayInterval) {
-        clearInterval(overlayInterval);
-        overlayInterval = null;
-    }
+  if (overlayInterval) {
+    clearInterval(overlayInterval);
+    overlayInterval = null;
+  }
 }
 
 function createWindow() {
@@ -140,7 +142,8 @@ function createWindow() {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false
+      sandbox: false,
+      webviewTag: true
     },
   })
 
@@ -200,6 +203,36 @@ function createWindow() {
       console.error('Failed to get recommendations:', error);
       throw error;
     }
+  });
+
+  ipcMain.handle('games:getMoodRecommendations', (_, mood: string, timeConstraint?: string) => {
+    try {
+      const games = gameManager.getAllGames() as any[];
+      return recommendationManager.getMoodRecommendations(games, mood, timeConstraint);
+    } catch (error) {
+      console.error('Failed to get mood recommendations:', error);
+      throw error;
+    }
+  });
+
+  // RGB IPC Handlers
+  ipcMain.handle('rgb:connect', async () => {
+    await rgbService.connect();
+    return true;
+  });
+
+  ipcMain.handle('rgb:setStatic', async (_, r, g, b) => {
+    await rgbService.setStaticColor(r, g, b);
+    return true;
+  });
+
+  ipcMain.handle('rgb:setEffect', async (_, effect, speed, color) => {
+    await rgbService.setEffect(effect, speed, color);
+    return true;
+  });
+
+  ipcMain.handle('rgb:getDevices', async () => {
+    return await rgbService.getDevices();
   });
 
   ipcMain.handle('games:getSmartSuggestion', (_, criteria: 'backlog' | 'replay' | 'quick' | 'forgotten' | 'random', maxMinutes?: number) => {
@@ -298,6 +331,15 @@ function createWindow() {
       return gameManager.getAverageSessionDuration();
     } catch (error) {
       console.error('Failed to get average session duration:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle('games:autoMerge', async () => {
+    try {
+      return await gameManager.autoMergeDuplicates();
+    } catch (error) {
+      console.error('Failed to auto-merge games:', error);
       throw error;
     }
   });
@@ -427,6 +469,18 @@ function createWindow() {
     return await hardwareMonitor.getStats();
   });
 
+  ipcMain.on('overlay:toggle', () => {
+    if (overlayWin) {
+      if (overlayWin.isVisible()) {
+        overlayWin.hide();
+        stopOverlayUpdates();
+      } else {
+        overlayWin.show();
+        startOverlayUpdates();
+      }
+    }
+  });
+
   ipcMain.handle('system:openExternal', async (_, url: string) => {
     try {
       await shell.openExternal(url);
@@ -440,6 +494,15 @@ function createWindow() {
   ipcMain.handle('dialog:openDirectory', async () => {
     const result = await dialog.showOpenDialog({
       properties: ['openDirectory']
+    });
+    if (result.canceled) return null;
+    return result.filePaths[0];
+  });
+
+  ipcMain.handle('dialog:openFile', async (_, filters: any[]) => {
+    const result = await dialog.showOpenDialog({
+      properties: ['openFile'],
+      filters: filters
     });
     if (result.canceled) return null;
     return result.filePaths[0];
@@ -611,9 +674,54 @@ app.whenReady().then(() => {
   imageCacheService = new ImageCacheService()
   manualGameService = new ManualGameService() // Instantiate ManualGameService
   performanceService = new PerformanceService()
+  gameManager.setPerformanceService(performanceService)
   saveManagerService = new SaveManagerService()
   videoEditorService = new VideoEditorService()
   obsService = new ObsService()
+  rgbService = new RGBService()
+  fanControlService = new FanControlService()
+  hltbService = new HLTBService()
+
+  // HLTB IPC
+  ipcMain.handle('games:hltbSearch', async (_, gameName: string) => {
+    try {
+      return await hltbService.search(gameName);
+    } catch (error) {
+      console.error('Failed to search HLTB:', error);
+      return null;
+    }
+  });
+
+  // Discord RPC
+  DiscordManager.getInstance();
+
+  // Fan Control IPC
+  ipcMain.handle('fans:getData', async () => {
+    try {
+      return await fanControlService.getFanData();
+    } catch (error) {
+      console.error('Failed to get fan data:', error);
+      return [];
+    }
+  });
+
+  ipcMain.handle('fans:setSpeed', async (_, id: string, value: number) => {
+    try {
+      return await fanControlService.setFanSpeed(id, value);
+    } catch (error) {
+      console.error('Failed to set fan speed:', error);
+      return false;
+    }
+  });
+
+  ipcMain.handle('fans:setCurve', async (_, id: string, points: any[]) => {
+    try {
+      return await fanControlService.setFanCurve(id, points);
+    } catch (error) {
+      console.error('Failed to set fan curve:', error);
+      return false;
+    }
+  });
 
   // OBS IPC
   ipcMain.handle('obs:setConnectionConfig', (_, config: ObsConnectionConfig) => {

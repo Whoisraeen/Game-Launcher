@@ -14,7 +14,7 @@ const Overlay: React.FC = () => {
         // Listen for updates from main process
         const removeListener = window.ipcRenderer.on('overlay:update', (_, newStats) => {
             setStats(newStats);
-        });
+        }) as unknown as () => void;
 
         return () => {
             removeListener();

@@ -12,13 +12,13 @@ const Store: React.FC = () => {
                     <h1 className="text-5xl font-bold text-white mb-2">ELDEN RING</h1>
                     <p className="text-gray-300 max-w-xl text-lg shadow-black drop-shadow-md">The Golden Order has been broken. Rise, Tarnished, and be guided by grace to brandish the Elden Ring and become the Elden Lord.</p>
                     <div className="flex items-center gap-4 pt-4">
-                        <button className="bg-blue-600 hover:bg-blue-500 text-white px-8 py-3 rounded-lg font-bold flex items-center gap-2 transition-all">
+                        <a href="https://store.steampowered.com/app/1245620/ELDEN_RING/" target="_blank" rel="noreferrer" className="bg-blue-600 hover:bg-blue-500 text-white px-8 py-3 rounded-lg font-bold flex items-center gap-2 transition-all">
                             <ShoppingCart size={20} />
                             $59.99
-                        </button>
-                        <button className="bg-white/10 hover:bg-white/20 backdrop-blur-md text-white px-6 py-3 rounded-lg font-medium transition-all">
-                            Add to Wishlist
-                        </button>
+                        </a>
+                        <a href="https://store.steampowered.com/search/?term=elden+ring" target="_blank" rel="noreferrer" className="bg-white/10 hover:bg-white/20 backdrop-blur-md text-white px-6 py-3 rounded-lg font-medium transition-all">
+                            View on Steam
+                        </a>
                     </div>
                 </div>
             </div>

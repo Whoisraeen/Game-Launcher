@@ -11,13 +11,19 @@ interface GameDetailsModalProps {
 }
 
 const GameDetailsModal: React.FC<GameDetailsModalProps> = ({ game, onClose, onPlay }) => {
-    const { toggleHidden, toggleFavorite, updateTags, updateLaunchOptions, updatePlayStatus, updateRating, updateUserNotes, installGame } = useGameStore();
+    const { toggleHidden, toggleFavorite, updateTags, updateLaunchOptions, updatePlayStatus, updateRating, updateUserNotes, installGame, unmergeGame, games } = useGameStore();
     const [isEditingTags, setIsEditingTags] = React.useState(false);
     const [newTag, setNewTag] = React.useState('');
     const [launchOptions, setLaunchOptions] = React.useState(game.launchOptions || '');
     const [showLaunchOptions, setShowLaunchOptions] = React.useState(false);
     const [notes, setNotes] = React.useState(game.userNotes || '');
     const [isSavingNotes, setIsSavingNotes] = React.useState(false);
+
+    // Find other games in the same group (merged duplicates)
+    const mergedGames = React.useMemo(() => {
+        if (!game.group_id) return [];
+        return games.filter(g => g.group_id === game.group_id && g.id !== game.id);
+    }, [games, game.group_id, game.id]);
 
     // Close on escape key
     React.useEffect(() => {
@@ -233,6 +239,39 @@ const GameDetailsModal: React.FC<GameDetailsModalProps> = ({ game, onClose, onPl
                                     </div>
                                 </div>
                             </div>
+
+                            {/* Merged Games / Versions */}
+                            {mergedGames.length > 0 && (
+                                <div>
+                                    <h3 className="text-gray-400 text-xs font-bold uppercase tracking-wider mb-3 flex items-center gap-2">
+                                        <span className="flex items-center gap-2">Linked Versions ({mergedGames.length})</span>
+                                    </h3>
+                                    <div className="space-y-2">
+                                        {mergedGames.map(merged => (
+                                            <div key={merged.id} className="bg-white/5 border border-white/10 rounded-lg p-3 flex items-center justify-between group">
+                                                <div className="flex items-center gap-3">
+                                                    <img src={getPlatformIcon(merged.platform)} alt={merged.platform} className="w-5 h-5 invert opacity-70" />
+                                                    <div className="flex flex-col">
+                                                        <span className="text-sm font-medium text-white">{merged.title}</span>
+                                                        <span className="text-xs text-gray-500">{merged.platform} • {merged.status === 'installed' ? 'Installed' : 'Not Installed'}</span>
+                                                    </div>
+                                                </div>
+                                                <button 
+                                                    onClick={() => {
+                                                        if (window.confirm(`Are you sure you want to unmerge ${merged.title} from this group?`)) {
+                                                            unmergeGame(merged.id);
+                                                        }
+                                                    }}
+                                                    className="p-2 rounded hover:bg-white/10 text-gray-400 hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100"
+                                                    title="Unmerge (Separate Game)"
+                                                >
+                                                    <X size={16} />
+                                                </button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
 
                             {/* Tags */}
                             <div>

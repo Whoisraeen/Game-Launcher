@@ -8,12 +8,10 @@ interface CachedImageProps extends React.ImgHTMLAttributes<HTMLImageElement> {
 export const CachedImage: React.FC<CachedImageProps> = ({ src, placeholderSrc, className, alt, ...props }) => {
     const [imageSrc, setImageSrc] = useState<string>(placeholderSrc || src);
     const [isLoading, setIsLoading] = useState(true);
-    const [hasError, setHasError] = useState(false);
 
     useEffect(() => {
         // Reset state when src changes
         setIsLoading(true);
-        setHasError(false);
         
         const img = new Image();
         img.src = src;
@@ -24,7 +22,6 @@ export const CachedImage: React.FC<CachedImageProps> = ({ src, placeholderSrc, c
         };
 
         img.onerror = () => {
-            setHasError(true);
             setIsLoading(false);
             // Fallback to placeholder if provided, or keep showing nothing/broken
             if (placeholderSrc) setImageSrc(placeholderSrc);

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Check, FolderOpen, RefreshCw, Plus, Trash2, X, AlertTriangle, FileText } from 'lucide-react';
+import { Check, RefreshCw, Plus, Trash2, X, AlertTriangle, FileText } from 'lucide-react';
 import { useModStore, Mod } from '../../stores/modStore';
 import { useGameStore } from '../../stores/gameStore';
 import ModConflictModal from '../ModConflictModal';

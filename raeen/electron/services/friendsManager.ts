@@ -1,3 +1,4 @@
+import { BrowserWindow } from 'electron';
 import { getDb } from '../database';
 import { v4 as uuidv4 } from 'uuid';
 import fs from 'fs';
@@ -9,16 +10,52 @@ export interface Friend {
     id: string;
     username: string;
     avatar: string;
-    status: 'online' | 'offline' | 'playing' | 'away';
+    status: 'online' | 'offline' | 'playing' | 'away' | 'busy';
     activity?: string;
     lastSeen?: string;
     platform?: string;
 }
 
 export class FriendsManager {
+    private simulationInterval: NodeJS.Timeout | null = null;
+
+    constructor() {
+        this.seedInitialData();
+        // Start simulation if in dev mode or just to keep things lively for the demo
+        this.startSimulation();
+    }
+
+    private seedInitialData() {
+        const db = getDb();
+        try {
+            const row = db.prepare('SELECT COUNT(*) as count FROM friends').get() as { count: number };
+            if (row && row.count === 0) {
+                const initialFriends = [
+                    { username: 'Sarah_G', platform: 'xbox', status: 'playing', activity: 'Halo Infinite' },
+                    { username: 'Mike_T', platform: 'psn', status: 'playing', activity: 'Spider-Man 2' },
+                    { username: 'Alex_R', platform: 'steam', status: 'busy', activity: null },
+                    { username: 'Jessica_W', platform: 'steam', status: 'away', activity: null },
+                    { username: 'DriftKing_99', platform: 'steam', status: 'online', activity: null }
+                ];
+
+                initialFriends.forEach(f => {
+                    const id = uuidv4();
+                    const avatar = `https://api.dicebear.com/7.x/avataaars/svg?seed=${f.username}`;
+                    db.prepare(`
+                    INSERT INTO friends (id, username, avatar_url, status, activity, last_seen, platform, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                 `).run(id, f.username, avatar, f.status, f.activity, 'Just now', f.platform, Date.now());
+                });
+                console.log('Seeded initial friends data');
+            }
+        } catch (error) {
+            console.error('Failed to seed initial friends:', error);
+        }
+    }
+
     getAll(): Friend[] {
         const db = getDb();
-        const rows = db.prepare('SELECT * FROM friends ORDER BY status DESC, username ASC').all();
+        const rows = db.prepare('SELECT * FROM friends ORDER BY CASE WHEN status = \'playing\' THEN 1 WHEN status = \'online\' THEN 2 ELSE 3 END, username ASC').all();
         
         return rows.map((row: any) => ({
             id: row.id,
@@ -53,6 +90,8 @@ export class FriendsManager {
             VALUES (@id, @username, @avatar_url, @status, @activity, @last_seen, @platform, @created_at)
         `).run(friend);
 
+        this.broadcastUpdate();
+
         return {
             id: friend.id,
             username: friend.username,
@@ -67,33 +106,60 @@ export class FriendsManager {
     removeFriend(id: string) {
         const db = getDb();
         db.prepare('DELETE FROM friends WHERE id = ?').run(id);
+        this.broadcastUpdate();
         return true;
     }
 
     // Simulation method for demo purposes - sets random status
     simulateActivity() {
         const db = getDb();
-        const friends = this.getAll();
+        // Get all friends directly from DB to ensure we have the latest
+        const rows = db.prepare('SELECT * FROM friends').all();
         
-        const statuses = ['online', 'offline', 'playing', 'away'];
-        const activities = ['Halo Infinite', 'Elden Ring', 'Cyberpunk 2077', 'Valorant', 'Minecraft', 'Spotify', 'Visual Studio Code'];
+        const statuses = ['online', 'offline', 'playing', 'away', 'busy'];
+        const activities = ['Halo Infinite', 'Elden Ring', 'Cyberpunk 2077', 'Valorant', 'Minecraft', 'Spotify', 'Visual Studio Code', 'Apex Legends', 'Fortnite', 'Call of Duty'];
         
-        friends.forEach(friend => {
-            // 30% chance to change status
-            if (Math.random() > 0.7) {
+        let changed = false;
+
+        rows.forEach((friend: any) => {
+            // 10% chance to change status per tick
+            if (Math.random() > 0.9) {
                 const newStatus = statuses[Math.floor(Math.random() * statuses.length)];
                 let newActivity = null;
                 
                 if (newStatus === 'playing') {
                     newActivity = activities[Math.floor(Math.random() * activities.length)];
+                } else if (newStatus === 'online') {
+                     // Small chance to be "Just chatting" or similar
+                     newActivity = Math.random() > 0.8 ? 'Browsing Store' : null;
                 }
                 
                 db.prepare('UPDATE friends SET status = ?, activity = ?, last_seen = ? WHERE id = ?')
-                  .run(newStatus, newActivity, new Date().toLocaleTimeString(), friend.id);
+                  .run(newStatus, newActivity, new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}), friend.id);
+                changed = true;
             }
         });
         
+        if (changed) {
+            this.broadcastUpdate();
+        }
+        
         return this.getAll();
+    }
+
+    startSimulation() {
+        if (this.simulationInterval) clearInterval(this.simulationInterval);
+        // Run every 5 seconds
+        this.simulationInterval = setInterval(() => {
+            this.simulateActivity();
+        }, 5000);
+    }
+
+    private broadcastUpdate() {
+        const friends = this.getAll();
+        BrowserWindow.getAllWindows().forEach(win => {
+            win.webContents.send('friends:update', friends);
+        });
     }
 
     async syncSteamFriendsRealTime(): Promise<Friend[]> {
@@ -140,14 +206,14 @@ export class FriendsManager {
             for (const player of players) {
                 // Map Steam Status to our Status
                 // personastate: 0 - Offline, 1 - Online, 2 - Busy, 3 - Away, 4 - Snooze, 5 - looking to trade, 6 - looking to play
-                let status: 'online' | 'offline' | 'away' | 'playing' = 'offline';
+                let status: 'online' | 'offline' | 'away' | 'playing' | 'busy' = 'offline';
                 if (player.gameextrainfo) {
                     status = 'playing';
                 } else {
                     switch (player.personastate) {
                         case 0: status = 'offline'; break;
                         case 1: status = 'online'; break;
-                        case 2: status = 'away'; break; // Busy -> Away
+                        case 2: status = 'busy'; break;
                         case 3: status = 'away'; break;
                         case 4: status = 'away'; break; // Snooze -> Away
                         default: status = 'online';

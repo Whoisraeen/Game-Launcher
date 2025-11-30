@@ -1,0 +1,10 @@
+"use strict";
+Object.defineProperty(exports, Symbol.toStringTag, { value: "Module" });
+const main = require("./main-Bsys93kc.js");
+exports.ENV_ACCOUNT_ID = main.ENV_ACCOUNT_ID;
+exports.ENV_CREDENTIAL_SCOPE = main.ENV_CREDENTIAL_SCOPE;
+exports.ENV_EXPIRATION = main.ENV_EXPIRATION;
+exports.ENV_KEY = main.ENV_KEY;
+exports.ENV_SECRET = main.ENV_SECRET;
+exports.ENV_SESSION = main.ENV_SESSION;
+exports.fromEnv = main.fromEnv;
