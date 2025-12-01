@@ -104,8 +104,8 @@ function createWindow() {
     backgroundColor: '#0f172a', // Dark background to match theme
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
-      nodeIntegration: true, // We might need this for some heavy lifting, but prefer contextBridge
-      contextIsolation: false, // For now, to simplify IPC. Ideally true + contextBridge.
+      nodeIntegration: false, // Prefer contextBridge
+      contextIsolation: true, // REQUIRED for contextBridge
       webSecurity: false // Allow loading local images
     },
     icon: path.join(process.env.VITE_PUBLIC, 'electron-vite.svg'),
@@ -191,7 +191,8 @@ app.whenReady().then(async () => {
     // Initialize Controllers
     // This registers the game handlers!
     gameController = new GameController(gameManager);
-    systemController = new SystemController();
+    // Pass the existing performanceService instance to SystemController
+    systemController = new SystemController(performanceService);
 
     // --- IPC Handlers Registration ---
     

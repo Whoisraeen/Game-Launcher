@@ -12,6 +12,15 @@ export class PerformanceService {
 
     constructor() {
         this.processManager = new ProcessManager();
+        // Handlers are now registered via SystemController or manual call in main.ts if preferred.
+        // But to avoid duplicates if instantiated multiple times (though it should be singleton),
+        // we should be careful.
+        // However, the error was "Attempted to register a second handler".
+        // This implies `new PerformanceService()` was called twice OR `registerHandlers` called twice.
+        // In `main.ts`, we do `performanceService = new PerformanceService();`.
+        // AND `systemController = new SystemController();` which ALSO does `new PerformanceService()`.
+        // That is the bug. SystemController creates its OWN instance.
+        
         this.registerHandlers();
     }
 

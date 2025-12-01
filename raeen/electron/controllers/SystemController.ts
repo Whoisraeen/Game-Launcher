@@ -7,10 +7,10 @@ export class SystemController {
     private performanceService: PerformanceService;
     private processManager: ProcessManager;
 
-    constructor() {
-        this.performanceService = new PerformanceService();
+    constructor(performanceService: PerformanceService) {
+        this.performanceService = performanceService;
         this.processManager = new ProcessManager();
-        this.registerHandlers();
+        // this.registerHandlers(); // Handlers already registered by Service constructor for now
     }
 
     private registerHandlers() {
