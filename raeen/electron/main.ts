@@ -821,6 +821,61 @@ app.whenReady().then(() => {
   manualGameService = new ManualGameService() // Instantiate ManualGameService
   performanceService = new PerformanceService()
   gameManager.setPerformanceService(performanceService)
+
+  // Game Manager Events
+  gameManager.on('game-started', async (game) => {
+      console.log(`Main: Game Started - ${game.title}`);
+      const settings = settingsManager.getAllSettings();
+      
+      // Performance Overlay
+      if (settings.performance.showOverlay) {
+          if (!overlayWin || overlayWin.isDestroyed()) {
+              createOverlayWindow();
+          }
+          if (overlayWin && !overlayWin.isDestroyed()) {
+              overlayWin.show();
+              startOverlayUpdates();
+          }
+      }
+  });
+
+  gameManager.on('game-ended', async (game) => {
+      console.log(`Main: Game Ended - ${game.title}`);
+      stopOverlayUpdates();
+      if (overlayWin && !overlayWin.isDestroyed()) {
+          overlayWin.hide();
+      }
+  });
+
+  // Overlay IPC
+  ipcMain.handle('overlay:toggle', (_, forceState?: boolean) => {
+      if (!overlayWin || overlayWin.isDestroyed()) {
+          createOverlayWindow();
+      }
+      
+      if (overlayWin && !overlayWin.isDestroyed()) {
+          if (forceState !== undefined) {
+              if (forceState) {
+                  overlayWin.show();
+                  startOverlayUpdates();
+              } else {
+                  overlayWin.hide();
+                  stopOverlayUpdates();
+              }
+          } else {
+              if (overlayWin.isVisible()) {
+                  overlayWin.hide();
+                  stopOverlayUpdates();
+              } else {
+                  overlayWin.show();
+                  startOverlayUpdates();
+              }
+          }
+          return overlayWin.isVisible();
+      }
+      return false;
+  });
+
   saveManagerService = new SaveManagerService()
   videoEditorService = new VideoEditorService()
   obsService = new ObsService()

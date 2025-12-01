@@ -2,6 +2,7 @@ import { app, shell } from 'electron';
 import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import { exec } from 'child_process';
+import { EventEmitter } from 'events';
 import { getDb } from '../database';
 import { SteamLibrary } from './SteamLibrary';
 import { EpicLibrary } from './EpicLibrary';
@@ -16,7 +17,7 @@ import { NotificationService } from './notificationService';
 import { SettingsManager } from './settingsManager';
 import { GamingSessionService } from './gamingSessionService';
 
-export class GameManager {
+export class GameManager extends EventEmitter {
     private steamLibrary: SteamLibrary;
     private epicLibrary: EpicLibrary;
     private scanner: PlatformScanner;
@@ -29,6 +30,7 @@ export class GameManager {
     private gamingSessionService: GamingSessionService;
 
     constructor() {
+        super();
         this.steamLibrary = new SteamLibrary();
         this.epicLibrary = new EpicLibrary();
         this.scanner = new PlatformScanner();
@@ -388,11 +390,21 @@ export class GameManager {
                     console.log(`Game process exited: ${processName}`);
                     DiscordManager.getInstance().setIdle();
                     this.gamingSessionService.stopMonitoring();
+                    
+                    // Notify listeners
+                    this.emit('game-ended', game);
 
-                    // Trigger memory cleanup after game session
+                    // Trigger memory cleanup and restore performance settings
                     try {
                         const settingsManager = new SettingsManager();
                         const settings = settingsManager.getAllSettings();
+                        
+                        // Restore Power Plan
+                        if (this.performanceService) {
+                            this.performanceService.restoreSystem()
+                                .catch(err => console.error('Error restoring system performance settings:', err));
+                        }
+
                         // Check if user has enabled post-session cleanup (defaulting to true)
                         const cleanupEnabled = settings.performance.memoryCleanup !== false;
 
@@ -444,6 +456,9 @@ export class GameManager {
         }
 
         console.log(`Launching game: ${game.title} (${game.platform})`);
+
+        // Notify listeners
+        this.emit('game-started', game);
 
         // Update last_played
         db.prepare('UPDATE games SET last_played = ? WHERE id = ?').run(Date.now(), gameId);

@@ -10,6 +10,7 @@ const SYSTEM_SAFELIST = [
 ];
 
 export class ProcessManager {
+  private throttledPids: number[] = [];
   
   async getProcessList(): Promise<any[]> {
     try {
@@ -65,6 +66,16 @@ export class ProcessManager {
     }
   }
 
+  async setNormalPriority(pid: number): Promise<boolean> {
+    try {
+      // Set to Normal (32)
+      await execAsync(`powershell -Command "$process = Get-Process -Id ${pid} -ErrorAction SilentlyContinue; if ($process) { $process.PriorityClass = 'Normal' }"`);
+      return true;
+    } catch (error) {
+      return false;
+    }
+  }
+
   async killProcess(pid: number): Promise<boolean> {
     try {
       await execAsync(`taskkill /F /PID ${pid}`);
@@ -82,6 +93,7 @@ export class ProcessManager {
    */
   async optimizeSystem(targetGamePid?: number, targetExecutable?: string): Promise<string[]> {
     const actionsTaken: string[] = [];
+    this.throttledPids = []; // Reset list
 
     // 1. Find Game PID if only executable provided
     if (!targetGamePid && targetExecutable) {
@@ -114,6 +126,7 @@ export class ProcessManager {
       for (const proc of heavyProcesses) {
         const throttled = await this.setLowPriority(proc.pid);
         if (throttled) {
+          this.throttledPids.push(proc.pid);
           actionsTaken.push(`⬇️ Throttled background app: ${proc.name} (${Math.round(proc.memoryKb/1024)}MB)`);
         }
       }
@@ -122,6 +135,27 @@ export class ProcessManager {
     }
 
     return actionsTaken;
+  }
+
+  async restorePriorities(): Promise<string[]> {
+    const actions: string[] = [];
+    
+    if (this.throttledPids.length === 0) return actions;
+
+    for (const pid of this.throttledPids) {
+      const restored = await this.setNormalPriority(pid);
+      if (restored) {
+        // We don't know the name anymore unless we stored it, but PID is enough for debug
+        // actions.push(`Restored PID ${pid}`);
+      }
+    }
+    
+    if (this.throttledPids.length > 0) {
+        actions.push(`⬆️ Restored priority for ${this.throttledPids.length} background processes`);
+    }
+    
+    this.throttledPids = [];
+    return actions;
   }
 
   /**

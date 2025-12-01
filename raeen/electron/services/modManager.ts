@@ -116,6 +116,22 @@ export class UniversalModManager {
     return true;
   }
 
+  // Helper to get all files recursively with relative paths
+  private getAllFiles(dir: string, fileList: string[] = [], rootDir: string = dir): string[] {
+    if (!fs.existsSync(dir)) return [];
+    const files = fs.readdirSync(dir);
+    for (const file of files) {
+        const fullPath = path.join(dir, file);
+        const stat = fs.statSync(fullPath);
+        if (stat.isDirectory()) {
+            this.getAllFiles(fullPath, fileList, rootDir);
+        } else {
+            fileList.push(path.relative(rootDir, fullPath));
+        }
+    }
+    return fileList;
+  }
+
   async enableMod(modId: string): Promise<boolean> {
       const db = getDb();
       const mod = db.prepare('SELECT * FROM mods WHERE id = ?').get(modId) as any;
@@ -129,22 +145,25 @@ export class UniversalModManager {
 
       if (!mod.install_path || !fs.existsSync(mod.install_path)) {
           console.error("Cannot enable mod: Mod files not found");
-          return false; // Or true if we just want to toggle the flag without files
+          return false;
       }
 
       try {
-          // 1. Get all files in mod directory
-          const modFiles = fs.readdirSync(mod.install_path);
+          // 1. Get all files in mod directory (Recursive)
+          const modFiles = this.getAllFiles(mod.install_path);
           
           // 2. Create Symlinks in Game Directory
-          // This is a simplified strategy: We symlink files at root of mod folder to root of game folder
-          // A real manager would handle nested structures or specific 'Data' folders.
-          
           for (const file of modFiles) {
               const srcPath = path.join(mod.install_path, file);
               const destPath = path.join(game.install_path, file);
+              const destDir = path.dirname(destPath);
 
-              // Backup existing file if it exists and isn't a symlink
+              // Ensure destination directory exists
+              if (!fs.existsSync(destDir)) {
+                  fs.mkdirSync(destDir, { recursive: true });
+              }
+
+              // Backup existing file if it exists
               if (fs.existsSync(destPath)) {
                   if (!fs.lstatSync(destPath).isSymbolicLink()) {
                       const backupPath = `${destPath}.bak`;
@@ -152,15 +171,15 @@ export class UniversalModManager {
                           fs.renameSync(destPath, backupPath);
                       }
                   } else {
-                      // If it's a symlink, maybe it's from another mod or previous install. 
-                      // We overwrite it.
+                      // If it's a symlink, overwrite it
                       fs.unlinkSync(destPath);
                   }
               }
 
-              // Create Symlink (Junction for dirs, File for files)
-              const type = fs.statSync(srcPath).isDirectory() ? 'junction' : 'file';
-              fs.symlinkSync(srcPath, destPath, type);
+              // Create Symlink (File)
+              // We use 'file' type because we are linking files, not directories
+              // If admin rights are missing, this might fail on Windows < 10 Creators Update or if Developer Mode is off
+              fs.symlinkSync(srcPath, destPath, 'file');
               console.log(`Symlinked ${srcPath} -> ${destPath}`);
           }
 
@@ -189,7 +208,7 @@ export class UniversalModManager {
        }
 
       try {
-          const modFiles = fs.readdirSync(mod.install_path);
+          const modFiles = this.getAllFiles(mod.install_path);
 
           for (const file of modFiles) {
               const destPath = path.join(game.install_path, file);
@@ -204,6 +223,22 @@ export class UniversalModManager {
                       fs.renameSync(backupPath, destPath);
                       console.log(`Restored backup: ${backupPath}`);
                   }
+              }
+              
+              // Clean up empty directories (optional but good for hygiene)
+              try {
+                  let dir = path.dirname(destPath);
+                  // Only remove directories inside game install path
+                  while (dir !== game.install_path && dir.length > game.install_path.length) {
+                      if (fs.readdirSync(dir).length === 0) {
+                          fs.rmdirSync(dir);
+                          dir = path.dirname(dir);
+                      } else {
+                          break;
+                      }
+                  }
+              } catch (e) {
+                  // Ignore cleanup errors
               }
           }
 
