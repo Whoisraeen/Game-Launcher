@@ -24,17 +24,23 @@ export class SteamLibrary {
     }
 
     async getInstalledGames(): Promise<SteamGame[]> {
+        console.log('Scanning Steam Library...');
         // 1. Get locally installed games
         const installedGames: SteamGame[] = [];
         const libraryFolders = await this.getLibraryFolders();
+        console.log(`Found Steam library folders: ${JSON.stringify(libraryFolders)}`);
 
         for (const folder of libraryFolders) {
             const steamAppsPath = path.join(folder, 'steamapps');
-            if (!fs.existsSync(steamAppsPath)) continue;
+            if (!fs.existsSync(steamAppsPath)) {
+                console.warn(`SteamApps path does not exist: ${steamAppsPath}`);
+                continue;
+            }
 
             try {
                 const files = fs.readdirSync(steamAppsPath);
                 const manifests = files.filter(f => f.startsWith('appmanifest_') && f.endsWith('.acf'));
+                console.log(`Found ${manifests.length} manifests in ${steamAppsPath}`);
 
                 for (const manifest of manifests) {
                     try {
@@ -53,7 +59,13 @@ export class SteamLibrary {
         }
 
         // 2. Get owned games (uninstalled) if Steam ID is present
-        const settings = this.settingsManager.getAllSettings();
+        let settings: any = {};
+        try {
+            settings = this.settingsManager.getAllSettings();
+        } catch (e) {
+            console.error('Failed to get settings for SteamLibrary:', e);
+        }
+
         // @ts-ignore - Dynamic property access if types not updated yet
         const steamId = settings.integrations?.steamId;
 
@@ -123,12 +135,14 @@ export class SteamLibrary {
 
         // 1. Find main Steam installation
         let steamPath = await this.findSteamPath();
+        console.log(`Steam main path detected: ${steamPath}`);
         if (!steamPath) return [];
 
         folders.add(steamPath);
 
         // 2. Parse libraryfolders.vdf
         const vdfPath = path.join(steamPath, 'steamapps', 'libraryfolders.vdf');
+        console.log(`Checking VDF at: ${vdfPath}`);
         if (fs.existsSync(vdfPath)) {
             try {
                 const content = fs.readFileSync(vdfPath, 'utf-8');

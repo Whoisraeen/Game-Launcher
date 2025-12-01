@@ -23,6 +23,56 @@ export class PerformanceService {
         ipcMain.handle('performance:restore', async () => {
             return await this.restoreSystem();
         });
+
+        ipcMain.handle('performance:getStats', async () => {
+            return await this.getSystemStats();
+        });
+    }
+
+    async getSystemStats() {
+        // Simple mock/real implementation using ProcessManager or direct execution
+        // For a full implementation, we would use systeminformation or similar library
+        // But to avoid new dependencies if possible, we can use what we have or basic PS commands
+        // Or reuse the ProcessManager's list for memory
+        
+        // NOTE: The Overlay expects: { cpu: { usage, temp }, memory: { used, total, percentage }, gpu: [...] }
+        // Getting all this via PowerShell is slow. 
+        // Ideally, we should use `systeminformation` package which is standard for this.
+        // Assuming we might have it or should install it. 
+        // If not, let's mock it for now to fix the error, or do a quick PS check.
+        
+        // Let's use a quick PowerShell command to get CPU and Memory
+        try {
+             const { stdout } = await execAsync(`
+                Get-WmiObject Win32_Processor | Select-Object -ExpandProperty LoadPercentage;
+                Get-WmiObject Win32_OperatingSystem | Select-Object FreePhysicalMemory, TotalVisibleMemorySize;
+             `, { shell: 'powershell.exe' });
+             
+             const lines = stdout.trim().split(/\r?\n/);
+             const cpuUsage = parseInt(lines[0]) || 0;
+             const freeMem = parseInt(lines[lines.length - 2]?.trim() || '0'); // KB
+             const totalMem = parseInt(lines[lines.length - 1]?.trim() || '0'); // KB
+             
+             const usedMem = totalMem - freeMem;
+             const memPercent = Math.round((usedMem / totalMem) * 100);
+             
+             return {
+                 cpu: { usage: cpuUsage, temp: 0 }, // Temp requires Admin or special access usually
+                 memory: { 
+                     used: usedMem * 1024, 
+                     total: totalMem * 1024, 
+                     percentage: memPercent 
+                 },
+                 gpu: [{ usage: 0, temp: 0, model: 'Generic' }] // GPU is hard without NVAPI/ADL
+             };
+        } catch (e) {
+            console.error('Error getting stats:', e);
+            return {
+                 cpu: { usage: 0, temp: 0 },
+                 memory: { used: 0, total: 0, percentage: 0 },
+                 gpu: []
+            };
+        }
     }
 
     async optimizeSystem(gameExecutable?: string) {

@@ -36,6 +36,42 @@ export class UpdateManagerService {
 
   constructor() {
     this.startAutoCheck();
+    this.cleanupDuplicates();
+  }
+
+  private cleanupDuplicates() {
+      try {
+          const db = getDb();
+          // Keep the latest detected update for each game, remove others
+          const duplicates = db.prepare(`
+            SELECT gameName, COUNT(*) as c
+            FROM game_updates
+            GROUP BY gameName
+            HAVING c > 1
+          `).all() as any[];
+
+          if (duplicates.length > 0) {
+              console.log(`Found ${duplicates.length} duplicated updates. Cleaning up...`);
+              const deleteStmt = db.prepare('DELETE FROM game_updates WHERE id = ?');
+              
+              for (const dup of duplicates) {
+                  const updates = db.prepare(`
+                      SELECT id, detected_at 
+                      FROM game_updates 
+                      WHERE gameName = ? 
+                      ORDER BY detected_at DESC
+                  `).all(dup.gameName) as any[];
+                  
+                  // Keep first one
+                  const toDelete = updates.slice(1);
+                  for (const u of toDelete) {
+                      deleteStmt.run(u.id);
+                  }
+              }
+          }
+      } catch (e) {
+          console.error('Failed to cleanup update duplicates:', e);
+      }
   }
 
   /**
@@ -384,7 +420,7 @@ export class UpdateManagerService {
       const updates = db.prepare(`
         SELECT * FROM game_updates
         WHERE status IN ('pending', 'downloading')
-        ORDER BY priority DESC, detectedAt DESC
+        ORDER BY priority DESC, detected_at DESC
       `).all() as any[];
 
       return updates.map(u => ({
@@ -406,7 +442,7 @@ export class UpdateManagerService {
       const updates = db.prepare(`
         SELECT * FROM game_updates
         WHERE gameId = ?
-        ORDER BY detectedAt DESC
+        ORDER BY detected_at DESC
         LIMIT 50
       `).all(gameId) as any[];
 

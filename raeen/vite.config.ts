@@ -15,8 +15,14 @@ export default defineConfig({
           build: {
             rollupOptions: {
               external: ['better-sqlite3'], // Don't bundle native modules
+              input: {
+                main: path.join(__dirname, 'electron/main.ts'),
+                // Ensure worker is built
+                dbWorker: path.join(__dirname, 'electron/workers/dbWorker.ts')
+              },
               output: {
                 format: 'cjs', // Build as CommonJS to support better-sqlite3
+                entryFileNames: '[name].js', // Output as dbWorker.js
               },
             },
           },

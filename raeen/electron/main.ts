@@ -47,6 +47,10 @@ console.info = log.info;
 autoUpdater.logger = log;
 autoUpdater.autoDownload = false; // Let user decide
 
+// Controllers
+import { GameController } from './controllers/GameController';
+import { SystemController } from './controllers/SystemController';
+
 // Services
 let gameManager: GameManager;
 let settingsManager: SettingsManager;
@@ -76,6 +80,10 @@ let supabaseService: SupabaseService;
 let gamingSessionService: GamingSessionService;
 let expenseTrackerService: ExpenseTrackerService;
 let storeService: StoreService;
+
+// Controllers
+let gameController: GameController;
+let systemController: SystemController;
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -191,47 +199,33 @@ function createWindow() {
     win?.close()
   })
 
-  // Game Library IPC Handlers
-  ipcMain.handle('games:sync', async () => {
-    try {
-      return await gameManager.syncLibrary();
-    } catch (error) {
-      console.error('Failed to sync library:', error);
-      throw error;
-    }
-  });
-
-  ipcMain.handle('games:getAll', () => {
-    try {
-      return gameManager.getAllGames();
-    } catch (error) {
-      console.error('Failed to get games:', error);
-      throw error;
-    }
-  });
-
-  ipcMain.handle('games:getPage', (_, page: number, pageSize: number) => {
-    try {
-      return gameManager.getGamesPage(page, pageSize);
-    } catch (error) {
-      console.error('Failed to get games page:', error);
-      throw error;
-    }
-  });
-
+  // NOTE: Game Library IPC Handlers are now registered by GameController.
+  // We are cleaning up the duplicates here to avoid runtime errors.
+  
   ipcMain.handle('games:getRecommendations', () => {
     try {
-      const games = gameManager.getAllGames() as any[];
-      return recommendationManager.getRecommendations(games);
+      const games = gameManager.getAllGames() as any;
+      // The above returns a Promise now, but getRecommendations expects an array.
+      // We need to await it. But we are in a sync-ish block or async?
+      // ipcMain.handle callback can be async.
+      // Let's make this callback async.
+      // Wait, recommendationManager expects synchronous array?
+      // Let's check recommendationManager.
+      // For now, let's assume we need to await it.
+      // But `gameManager.getAllGames()` is async now due to Worker.
+      // So we MUST await it.
+      return gameManager.getAllGames().then((games: any[]) => {
+           return recommendationManager.getRecommendations(games);
+      });
     } catch (error) {
       console.error('Failed to get recommendations:', error);
       throw error;
     }
   });
 
-  ipcMain.handle('games:getMoodRecommendations', (_, mood: string, timeConstraint?: string) => {
+  ipcMain.handle('games:getMoodRecommendations', async (_, mood: string, timeConstraint?: string) => {
     try {
-      const games = gameManager.getAllGames() as any[];
+      const games = await gameManager.getAllGames() as any[];
       return recommendationManager.getMoodRecommendations(games, mood, timeConstraint);
     } catch (error) {
       console.error('Failed to get mood recommendations:', error);
@@ -259,48 +253,12 @@ function createWindow() {
     return await rgbService.getDevices();
   });
 
-  ipcMain.handle('games:getSmartSuggestion', (_, criteria: 'backlog' | 'replay' | 'quick' | 'forgotten' | 'random', maxMinutes?: number) => {
+  ipcMain.handle('games:getSmartSuggestion', async (_, criteria: 'backlog' | 'replay' | 'quick' | 'forgotten' | 'random', maxMinutes?: number) => {
     try {
-      const games = gameManager.getAllGames() as any[];
+      const games = await gameManager.getAllGames() as any[];
       return recommendationManager.getSmartSuggestion(games, criteria, maxMinutes);
     } catch (error) {
       console.error('Failed to get smart suggestion:', error);
-      throw error;
-    }
-  });
-
-  ipcMain.handle('games:launch', async (_, gameId: string) => {
-    try {
-      return await gameManager.launchGame(gameId);
-    } catch (error) {
-      console.error('Failed to launch game:', error);
-      throw error;
-    }
-  });
-
-  ipcMain.handle('games:install', async (_, gameId: string) => {
-    try {
-      return await gameManager.installGame(gameId);
-    } catch (error) {
-      console.error('Failed to install game:', error);
-      throw error;
-    }
-  });
-
-  ipcMain.handle('games:verify', async (_, gameId: string) => {
-    try {
-      return await gameManager.verifyGame(gameId);
-    } catch (error) {
-      console.error('Failed to verify game:', error);
-      throw error;
-    }
-  });
-
-  ipcMain.handle('games:kill', async (_, gameId: string) => {
-    try {
-      return await gameManager.killGame(gameId);
-    } catch (error) {
-      console.error('Failed to kill game:', error);
       throw error;
     }
   });
@@ -359,126 +317,41 @@ function createWindow() {
     }
   });
 
-  ipcMain.handle('games:autoMerge', async () => {
-    try {
-      return await gameManager.autoMergeDuplicates();
-    } catch (error) {
-      console.error('Failed to auto-merge games:', error);
-      throw error;
-    }
-  });
+  // NOTE: AutoMerge is now in GameController
+  // ipcMain.handle('games:autoMerge', async () => { ... })
 
-  ipcMain.handle('games:updateLaunchOptions', (_, gameId: string, options: string) => {
-    try {
-      return gameManager.updateLaunchOptions(gameId, options);
-    } catch (error) {
-      console.error('Failed to update launch options:', error);
-      throw error;
-    }
-  });
+  // NOTE: UpdateLaunchOptions is now in GameController
+  // ipcMain.handle('games:updateLaunchOptions', (_, gameId: string, options: string) => { ... })
 
-  ipcMain.handle('games:updateRating', (_, gameId: string, rating: number) => {
-    try {
-      return gameManager.updateRating(gameId, rating);
-    } catch (error) {
-      console.error('Failed to update rating:', error);
-      throw error;
-    }
-  });
+  // NOTE: UpdateRating is now in GameController
+  // ipcMain.handle('games:updateRating', (_, gameId: string, rating: number) => { ... })
 
-  ipcMain.handle('games:updateUserNotes', (_, gameId: string, notes: string) => {
-    try {
-      return gameManager.updateUserNotes(gameId, notes);
-    } catch (error) {
-      console.error('Failed to update user notes:', error);
-      throw error;
-    }
-  });
+  // NOTE: UpdateUserNotes is now in GameController
+  // ipcMain.handle('games:updateUserNotes', (_, gameId: string, notes: string) => { ... })
 
-  ipcMain.handle('games:openPlatform', async (_, platform: string) => {
-    try {
-      return await gameManager.openPlatform(platform);
-    } catch (error) {
-      console.error('Failed to open platform:', error);
-      throw error;
-    }
-  });
+  // NOTE: OpenPlatform is now in GameController
+  // ipcMain.handle('games:openPlatform', async (_, platform: string) => { ... })
 
-  ipcMain.handle('games:getNews', async () => {
-    try {
-      return await gameManager.getLibraryNews();
-    } catch (error) {
-      console.error('Failed to get library news:', error);
-      throw error;
-    }
-  });
+  // NOTE: GetNews is now in GameController
+  // ipcMain.handle('games:getNews', async () => { ... })
 
-  ipcMain.handle('games:openInstallFolder', async (_, gameId: string) => {
-    try {
-      return await gameManager.openInstallFolder(gameId);
-    } catch (error) {
-      console.error('Failed to open install folder:', error);
-      throw error;
-    }
-  });
+  // NOTE: OpenInstallFolder is now in GameController
+  // ipcMain.handle('games:openInstallFolder', async (_, gameId: string) => { ... })
 
-  ipcMain.handle('games:createShortcut', async (_, gameId: string) => {
-    try {
-      return await gameManager.createShortcut(gameId);
-    } catch (error) {
-      console.error('Failed to create shortcut:', error);
-      throw error;
-    }
-  });
+  // NOTE: CreateShortcut is now in GameController
+  // ipcMain.handle('games:createShortcut', async (_, gameId: string) => { ... })
 
-  ipcMain.handle('games:uninstall', async (_, gameId: string) => {
-    try {
-      return await gameManager.uninstallGame(gameId);
-    } catch (error) {
-      console.error('Failed to uninstall game:', error);
-      throw error;
-    }
-  });
+  // NOTE: Uninstall is now in GameController
+  // ipcMain.handle('games:uninstall', async (_, gameId: string) => { ... })
 
-  ipcMain.handle('games:updateDetails', async (_, gameId: string, updates: any) => {
-    try {
-      return await gameManager.updateGameDetails(gameId, updates);
-    } catch (error) {
-      console.error('Failed to update game details:', error);
-      throw error;
-    }
-  });
+  // NOTE: UpdateDetails is now in GameController
+  // ipcMain.handle('games:updateDetails', async (_, gameId: string, updates: any) => { ... })
 
-  ipcMain.handle('games:updateOrder', async (_, gameIds: string[]) => {
-    try {
-      return gameManager.updateGameOrder(gameIds);
-    } catch (error) {
-      console.error('Failed to update game order:', error);
-      throw error;
-    }
-  });
+  // NOTE: UpdateOrder is now in GameController
+  // ipcMain.handle('games:updateOrder', async (_, gameIds: string[]) => { ... })
 
-  // Collection Handlers
-  ipcMain.handle('collections:getAll', () => {
-    return gameManager.getCollections();
-  });
-
-  ipcMain.handle('collections:create', (_, name: string, description?: string) => {
-    return gameManager.createCollection(name, description);
-  });
-
-  ipcMain.handle('collections:delete', (_, id: string) => {
-    return gameManager.deleteCollection(id);
-  });
-
-  ipcMain.handle('collections:addGame', (_, collectionId: string, gameId: string) => {
-    return gameManager.addGameToCollection(collectionId, gameId);
-  });
-
-  ipcMain.handle('collections:removeGame', (_, collectionId: string, gameId: string) => {
-    return gameManager.removeGameFromCollection(collectionId, gameId);
-  });
-
+  // Collection Handlers (Removed as they are in GameController)
+  
   // Settings IPC Handlers
   ipcMain.handle('settings:getAll', () => {
     return settingsManager.getAllSettings();
@@ -1800,10 +1673,13 @@ app.whenReady().then(() => {
     }
   });
 
-  createWindow()
+    // Connect Services
+    gameManager.setPerformanceService(performanceService);
+    
+    // Check for updates after a short delay
+    setTimeout(() => {
+      autoUpdater.checkForUpdatesAndNotify();
+    }, 3000);
 
-  // Check for updates after a short delay
-  setTimeout(() => {
-    autoUpdater.checkForUpdatesAndNotify();
-  }, 3000);
+    createWindow()
 })
