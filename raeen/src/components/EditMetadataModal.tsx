@@ -72,10 +72,12 @@ const EditMetadataModal: React.FC<EditMetadataModalProps> = ({ gameId, onClose }
     
     const [customBackground, setCustomBackground] = useState<string | null>(null);
     const handleBackgroundUpload = async () => {
-         // In a real app, we'd use a file dialog here
-         // For this demo, let's prompt for a URL or use a dummy path if we had a file picker
-         const url = prompt("Enter URL for custom background:");
-         if (url) setCustomBackground(url);
+         try {
+             const result = await window.ipcRenderer.invoke('dialog:openFile', [{ name: 'Images', extensions: ['jpg', 'png', 'webp', 'jpeg'] }]);
+             if (result) setCustomBackground(result);
+         } catch (e) {
+             console.error(e);
+         }
     };
 
     if (!game) return null;

@@ -45,35 +45,9 @@ const Mods: React.FC = () => {
     };
 
     const handleOpenIni = async () => {
-        // In a real scenario, we'd scan the game folder for .ini files and present a list.
-        // For now, let's just open a file picker to select one.
-        // Or better, if we know the game path, we can guess common configs.
-        // Simplest V1: File picker.
-        // Or maybe pass a known path if available.
         try {
-            // We reuse the dialog:openDirectory but we need openFile...
-            // IPC handler `dialog:openFile` not strictly in list, but we can assume it exists or add it.
-            // Let's assume we need to add it or use a generic file opener.
-            // Actually, `INIEditor` takes a filePath.
-            // Let's mock a file picker via window.ipcRenderer if specific IPC not there, 
-            // but typically we'd want `dialog.showOpenDialog` with filters.
-            // Since I can't easily add main process code in this turn without `replace`, 
-            // I'll check if I can use `dialog:openDirectory` logic but for files.
-            // Let's just assume the user can paste a path or we find a way.
-            // Ideally:
-            /*
-            const result = await window.ipcRenderer.invoke('dialog:openFile', { 
-                filters: [{ name: 'Config Files', extensions: ['ini', 'cfg', 'txt'] }] 
-            });
-            */
-           // Since we don't have 'dialog:openFile' explicitly in main.ts (only openDirectory), 
-           // let's rely on manual input or future implementation.
-           // Or better: Add 'Edit Config' button to specific mods if they have a config file defined?
-           // For this "Advanced" requirement, let's just open a prompt for path for now or use a dummy one.
-           
-           const path = prompt("Enter full path to .ini file:");
-           if (path) setIniFilePath(path);
-
+            const result = await window.ipcRenderer.invoke('dialog:openFile', [{ name: 'Config Files', extensions: ['ini', 'cfg', 'txt'] }]);
+            if (result) setIniFilePath(result);
         } catch (e) {
             console.error(e);
         }
@@ -90,6 +64,15 @@ const Mods: React.FC = () => {
         setModDesc('');
         setModVersion('');
         setModPath('');
+    };
+
+    const handleBrowseModPath = async () => {
+        try {
+            const result = await window.ipcRenderer.invoke('dialog:openDirectory');
+            if (result) setModPath(result);
+        } catch (e) {
+            console.error(e);
+        }
     };
 
     return (
@@ -242,13 +225,22 @@ const Mods: React.FC = () => {
 
                             <div>
                                 <label className="block text-xs font-bold text-gray-400 uppercase mb-1">Install Path (Optional)</label>
-                                <input
-                                    type="text"
-                                    value={modPath}
-                                    onChange={e => setModPath(e.target.value)}
-                                    className="w-full bg-black/40 border border-white/10 rounded-lg p-2 text-white focus:outline-none focus:border-blue-500"
-                                    placeholder="C:\Path\To\Mod"
-                                />
+                                <div className="flex gap-2">
+                                    <input
+                                        type="text"
+                                        value={modPath}
+                                        onChange={e => setModPath(e.target.value)}
+                                        className="w-full bg-black/40 border border-white/10 rounded-lg p-2 text-white focus:outline-none focus:border-blue-500"
+                                        placeholder="C:\Path\To\Mod"
+                                    />
+                                    <button
+                                        type="button"
+                                        onClick={handleBrowseModPath}
+                                        className="px-3 py-2 bg-white/10 hover:bg-white/20 rounded-lg text-gray-300 transition-colors"
+                                    >
+                                        ...
+                                    </button>
+                                </div>
                             </div>
 
                             <div className="pt-4 flex justify-end gap-3">

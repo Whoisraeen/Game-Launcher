@@ -81,9 +81,9 @@ export const EditGameModal: React.FC<EditGameModalProps> = ({ game, onClose }) =
                                     <label className="text-sm font-medium text-gray-400">Sort Title</label>
                                     <input
                                         type="text"
-                                        value={formData.title || ''} // Placeholder for sort title if we had it
+                                        value={formData.title || ''}
+                                        onChange={(e) => handleChange('title', e.target.value)}
                                         className="w-full bg-black/20 border border-white/10 rounded-lg px-4 py-2 text-white focus:border-blue-500 focus:outline-none"
-                                        disabled
                                     />
                                 </div>
                             </div>
@@ -91,11 +91,11 @@ export const EditGameModal: React.FC<EditGameModalProps> = ({ game, onClose }) =
                             <div className="space-y-2">
                                 <label className="text-sm font-medium text-gray-400">Description</label>
                                 <textarea
-                                    value={formData.userNotes || ''} // Using userNotes as description for now or we need a real description field
-                                    onChange={(e) => handleChange('userNotes', e.target.value)}
+                                    value={formData.description || ''}
+                                    onChange={(e) => handleChange('description', e.target.value)}
                                     rows={5}
                                     className="w-full bg-black/20 border border-white/10 rounded-lg px-4 py-2 text-white focus:border-blue-500 focus:outline-none resize-none"
-                                    placeholder="Add your notes here..."
+                                    placeholder="Game description..."
                                 />
                             </div>
 
@@ -113,9 +113,9 @@ export const EditGameModal: React.FC<EditGameModalProps> = ({ game, onClose }) =
                                     <label className="text-sm font-medium text-gray-400">Developer</label>
                                     <input
                                         type="text"
-                                        value="Unknown" // Placeholder
+                                        value={formData.developer || ''}
+                                        onChange={(e) => handleChange('developer', e.target.value)}
                                         className="w-full bg-black/20 border border-white/10 rounded-lg px-4 py-2 text-white focus:border-blue-500 focus:outline-none"
-                                        disabled
                                     />
                                 </div>
                             </div>

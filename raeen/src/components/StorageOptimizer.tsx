@@ -13,21 +13,26 @@ const StorageOptimizer: React.FC = () => {
         analyzeStorage();
     }, [games]);
 
-    const analyzeStorage = () => {
+    const analyzeStorage = async () => {
         // Group games by drive (Windows only for now, based on first char)
         const drives: any = {};
         const unused: any[] = [];
         const sixMonthsAgo = Date.now() - (180 * 24 * 60 * 60 * 1000);
 
-        games.forEach(game => {
+        for (const game of games) {
             if (game.status === 'installed' && game.installPath) {
                 // Drive detection
                 const drive = game.installPath.charAt(0).toUpperCase();
                 if (!drives[drive]) drives[drive] = { name: drive, size: 0, count: 0 };
                 
-                // Mock size if we don't have it (we need 'du' logic in backend really, assuming 20GB avg for now if unknown)
-                // Ideally we'd fetch size. Let's use a random size for demo visualization if undefined
-                const size = 20 * 1024 * 1024 * 1024; 
+                // Fetch real size
+                let size = 0;
+                try {
+                    size = await window.ipcRenderer.invoke('system:getFolderSize', game.installPath);
+                } catch (e) {
+                    console.warn(`Failed to get size for ${game.title}`);
+                }
+                
                 drives[drive].size += size; 
                 drives[drive].count++;
 
@@ -36,7 +41,7 @@ const StorageOptimizer: React.FC = () => {
                     unused.push(game);
                 }
             }
-        });
+        }
 
         setDriveStats(Object.values(drives));
         setUnusedGames(unused);

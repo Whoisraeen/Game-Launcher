@@ -17,7 +17,10 @@ import {
     Video,
     Cpu,
     AlertTriangle,
-    Sparkles
+    Sparkles,
+    MessagesSquare,
+    Camera,
+    Package
 } from 'lucide-react';
 
 import { useSettingsStore } from '../stores/settingsStore';
@@ -183,12 +186,15 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage, onNavigate }) => {
                     <NavItem icon={<ShoppingBag size={20} />} label="Store" active={activePage === 'Store'} onClick={() => onNavigate('Store')} />
                     <NavItem icon={<Heart size={20} />} label="Wishlist" active={activePage === 'Wishlist'} onClick={() => onNavigate('Wishlist')} />
                     <NavItem icon={<Users size={20} />} label="Friends" active={activePage === 'Friends'} badge="3" onClick={() => onNavigate('Friends')} />
-                    <NavItem icon={<Trophy size={20} />} label="Social Hub" active={activePage === 'SocialHub'} onClick={() => onNavigate('SocialHub')} />
+                    <NavItem icon={<MessagesSquare size={20} />} label="Social Hub" active={activePage === 'SocialHub'} onClick={() => onNavigate('SocialHub')} />
                     <NavItem icon={<LayoutGrid size={20} />} label="Widgets" active={activePage === 'Widgets'} onClick={() => onNavigate('Widgets')} />
                     <NavItem icon={<BrainCircuit size={20} />} label="Smart Dash" active={activePage === 'SmartDashboard'} onClick={() => onNavigate('SmartDashboard')} />
                     <NavItem icon={<Newspaper size={20} />} label="News" active={activePage === 'News'} onClick={() => onNavigate('News')} />
                     <NavItem icon={<BarChart2 size={20} />} label="Analytics" active={activePage === 'Analytics'} onClick={() => onNavigate('Analytics')} />
+                    <NavItem icon={<Trophy size={20} />} label="Achievements" active={activePage === 'Achievements'} onClick={() => onNavigate('Achievements')} />
                     <NavItem icon={<Wrench size={20} />} label="Mods" active={activePage === 'Mods'} badge="New" onClick={() => onNavigate('Mods')} />
+                    <NavItem icon={<Package size={20} />} label="DLC Manager" active={activePage === 'DLCManager'} onClick={() => onNavigate('DLCManager')} />
+                    <NavItem icon={<Camera size={20} />} label="Screenshots" active={activePage === 'Screenshots'} onClick={() => onNavigate('Screenshots')} />
                     <NavItem icon={<Video size={20} />} label="Studio" active={activePage === 'Studio'} onClick={() => onNavigate('Studio')} />
                     <NavItem icon={<Cpu size={20} />} label="Hardware" active={activePage === 'HardwareLab'} onClick={() => onNavigate('HardwareLab')} />
                     <NavItem icon={<AlertTriangle size={20} />} label="Fix Issues" active={activePage === 'Troubleshooter'} onClick={() => onNavigate('Troubleshooter')} />

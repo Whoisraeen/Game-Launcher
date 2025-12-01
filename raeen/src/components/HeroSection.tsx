@@ -2,7 +2,7 @@ import React, { useEffect } from 'react';
 import { Play, Clock } from 'lucide-react';
 import { useGameStore } from '../stores/gameStore';
 import { useUIStore } from '../stores/uiStore';
-import { getPlatformIcon, getPlatformName } from '../data/LauncherData';
+import { getPlatformIcon, getPlatformName } from '../utils/platformUtils';
 import { CachedImage } from './CachedImage';
 
 const HeroSection: React.FC = () => {

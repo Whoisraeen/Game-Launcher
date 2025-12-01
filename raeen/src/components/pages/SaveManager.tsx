@@ -22,6 +22,7 @@ const SaveManager: React.FC = () => {
     const { games } = useGameStore();
     const [configs, setConfigs] = useState<SaveConfig[]>([]);
     const [cloudPath, setCloudPath] = useState<string | null>(null);
+    const [cloudSyncEnabled, setCloudSyncEnabled] = useState(false);
     const [selectedGameId, setSelectedGameId] = useState<string | null>(null);
     const [backups, setBackups] = useState<BackupEntry[]>([]);
     const [isLoading, setIsLoading] = useState(false);
@@ -48,6 +49,14 @@ const SaveManager: React.FC = () => {
         const config = await window.ipcRenderer.invoke('saves:getConfig');
         setConfigs(config.configs || []);
         setCloudPath(config.cloudPath);
+        setCloudSyncEnabled(config.cloudSyncEnabled);
+    };
+
+    const handleToggleCloudSync = async () => {
+        const newValue = !cloudSyncEnabled;
+        setCloudSyncEnabled(newValue);
+        await window.ipcRenderer.invoke('saves:setCloudSyncEnabled', newValue);
+        loadConfig();
     };
 
     const loadBackups = async (gameId: string) => {
@@ -151,19 +160,36 @@ const SaveManager: React.FC = () => {
                     <p className="text-gray-400 mt-1">Manage game saves, backups, and cloud sync.</p>
                 </div>
                 
-                <div className="flex items-center gap-4 bg-black/20 px-4 py-2 rounded-lg border border-white/5">
-                    <div className="flex flex-col">
-                        <span className="text-xs font-bold text-gray-500 uppercase">Cloud Sync Folder</span>
-                        <span className="text-sm text-white truncate max-w-xs" title={cloudPath || ''}>
-                            {cloudPath || 'Not Configured'}
-                        </span>
+                <div className="flex items-center gap-4">
+                    <div className="flex items-center gap-3 bg-black/20 px-4 py-2 rounded-lg border border-white/5">
+                        <div className="flex flex-col">
+                            <span className="text-xs font-bold text-gray-500 uppercase">Auto Cloud Sync</span>
+                            <span className={`text-sm font-medium ${cloudSyncEnabled ? 'text-green-400' : 'text-gray-400'}`}>
+                                {cloudSyncEnabled ? 'Enabled' : 'Disabled'}
+                            </span>
+                        </div>
+                        <button 
+                            onClick={handleToggleCloudSync}
+                            className={`w-10 h-5 rounded-full relative transition-colors ${cloudSyncEnabled ? 'bg-green-500' : 'bg-white/10'}`}
+                        >
+                            <div className={`absolute top-1 w-3 h-3 rounded-full bg-white transition-all ${cloudSyncEnabled ? 'left-6' : 'left-1'}`} />
+                        </button>
                     </div>
-                    <button 
-                        onClick={handleSetCloudPath}
-                        className="p-2 bg-white/10 hover:bg-white/20 text-white rounded transition-colors"
-                    >
-                        <FolderOpen size={16} />
-                    </button>
+
+                    <div className="flex items-center gap-4 bg-black/20 px-4 py-2 rounded-lg border border-white/5">
+                        <div className="flex flex-col">
+                            <span className="text-xs font-bold text-gray-500 uppercase">Cloud Sync Folder</span>
+                            <span className="text-sm text-white truncate max-w-xs" title={cloudPath || ''}>
+                                {cloudPath || 'Not Configured'}
+                            </span>
+                        </div>
+                        <button 
+                            onClick={handleSetCloudPath}
+                            className="p-2 bg-white/10 hover:bg-white/20 text-white rounded transition-colors"
+                        >
+                            <FolderOpen size={16} />
+                        </button>
+                    </div>
                 </div>
             </div>
 

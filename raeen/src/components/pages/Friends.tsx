@@ -1,5 +1,5 @@
-import React, { useMemo, useState, useEffect } from 'react';
-import { Search, UserPlus, MessageSquare, RefreshCw, Trash2, Gamepad2, Download, Cloud, Activity } from 'lucide-react';
+import React, { useMemo, useState, useEffect, useRef } from 'react';
+import { Search, UserPlus, MessageSquare, RefreshCw, Trash2, Gamepad2, Download, Cloud, Activity, Send } from 'lucide-react';
 import { useFriendStore } from '../../stores/friendStore';
 import { Friend } from '../../types';
 
@@ -9,6 +9,9 @@ const Friends: React.FC = () => {
     const [showAddModal, setShowAddModal] = useState(false);
     const [newFriendName, setNewFriendName] = useState('');
     const [newFriendPlatform, setNewFriendPlatform] = useState('steam');
+    const [messages, setMessages] = useState<any[]>([]);
+    const [newMessage, setNewMessage] = useState('');
+    const messagesEndRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
         loadFriends();
@@ -17,8 +20,22 @@ const Friends: React.FC = () => {
         const interval = setInterval(() => {
             simulateActivity();
         }, 30000);
+        
+        // Listen for incoming messages
+        const removeListener = window.ipcRenderer.on('friends:message', (_: any, data: any) => {
+            if (data.friendId === selectedFriendId) {
+                setMessages(prev => [...prev, data.message]);
+                // If it's an incoming message from the current friend, mark read
+                if (data.message.sender !== 'me') {
+                    window.ipcRenderer.invoke('friends:markRead', selectedFriendId);
+                }
+            }
+        });
 
-        return () => clearInterval(interval);
+        return () => {
+            clearInterval(interval);
+            removeListener();
+        };
     }, [loadFriends, simulateActivity]);
 
     const filteredFriends = useMemo<Friend[]>(() => {
@@ -31,6 +48,44 @@ const Friends: React.FC = () => {
 
     const [selectedFriendId, setSelectedFriendId] = useState<string | null>(null);
     const selectedFriend = friends.find(f => f.id === selectedFriendId);
+
+    useEffect(() => {
+        if (selectedFriendId) {
+            loadMessages(selectedFriendId);
+        }
+    }, [selectedFriendId]);
+
+    useEffect(() => {
+        scrollToBottom();
+    }, [messages]);
+
+    const scrollToBottom = () => {
+        messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    };
+
+    const loadMessages = async (friendId: string) => {
+        try {
+            const msgs = await window.ipcRenderer.invoke('friends:getMessages', friendId);
+            setMessages(msgs);
+            await window.ipcRenderer.invoke('friends:markRead', friendId);
+        } catch (error) {
+            console.error('Failed to load messages', error);
+        }
+    };
+
+    const sendMessage = async (e?: React.FormEvent) => {
+        e?.preventDefault();
+        if (!selectedFriendId || !newMessage.trim()) return;
+
+        try {
+            await window.ipcRenderer.invoke('friends:sendMessage', selectedFriendId, newMessage.trim());
+            // Optimistic update handled by listener usually, but let's just rely on listener or re-fetch?
+            // Listener 'friends:message' handles own messages too? Yes in `FriendsManager.ts`.
+            setNewMessage('');
+        } catch (error) {
+            console.error('Failed to send message', error);
+        }
+    };
 
     const handleAddFriend = () => {
         if (newFriendName.trim()) {
@@ -146,11 +201,11 @@ const Friends: React.FC = () => {
             </div>
 
             {/* Chat / Activity Area */}
-            <div className="flex-1 flex flex-col bg-slate-900/20">
+            <div className="flex-1 flex flex-col bg-slate-900/20 relative">
                 {selectedFriend ? (
                     <div className="flex flex-col h-full">
                         {/* Header */}
-                        <div className="h-16 border-b border-white/5 flex items-center justify-between px-6 bg-white/5 backdrop-blur-md">
+                        <div className="h-16 border-b border-white/5 flex items-center justify-between px-6 bg-white/5 backdrop-blur-md z-10">
                             <div className="flex items-center gap-4">
                                 <div className="relative">
                                     <img
@@ -188,40 +243,51 @@ const Friends: React.FC = () => {
                             </div>
                         </div>
 
-                        {/* Messages Area (Placeholder) */}
-                        <div className="flex-1 flex flex-col items-center justify-center text-gray-500 space-y-4 p-8">
-                            <div className="w-20 h-20 bg-slate-800/50 rounded-full flex items-center justify-center mb-4">
-                                <MessageSquare size={32} />
-                            </div>
-                            <p className="text-lg font-medium">Chat with {selectedFriend.username}</p>
-                            <p className="text-sm max-w-md text-center opacity-70">
-                                This is a placeholder for the chat interface. In a real implementation,
-                                this would connect to a messaging service or platform API.
-                            </p>
-
-                            {selectedFriend.status === 'playing' && (
-                                <div className="mt-8 bg-purple-500/10 border border-purple-500/20 rounded-lg p-4 flex items-center gap-4 max-w-md w-full">
-                                    <Gamepad2 className="text-purple-400" size={24} />
-                                    <div>
-                                        <p className="text-xs text-purple-300 font-bold uppercase">Now Playing</p>
-                                        <p className="text-white font-bold">{selectedFriend.activity}</p>
-                                        <button className="mt-2 text-xs bg-purple-500 hover:bg-purple-400 text-white px-3 py-1 rounded transition-colors">
-                                            Join Game
-                                        </button>
+                        {/* Messages Area */}
+                        <div className="flex-1 overflow-y-auto custom-scrollbar p-6 space-y-4 bg-slate-900/50">
+                             {messages.length === 0 && (
+                                <div className="flex flex-col items-center justify-center h-full text-gray-500 opacity-50">
+                                    <MessageSquare size={48} className="mb-4" />
+                                    <p>Start a conversation with {selectedFriend.username}</p>
+                                </div>
+                             )}
+                             
+                             {messages.map((msg) => (
+                                <div key={msg.id} className={`flex ${msg.sender === 'me' ? 'justify-end' : 'justify-start'}`}>
+                                    <div className={`max-w-[70%] rounded-2xl px-4 py-2.5 text-sm ${
+                                        msg.sender === 'me' 
+                                            ? 'bg-blue-600 text-white rounded-tr-none' 
+                                            : 'bg-slate-700 text-gray-200 rounded-tl-none'
+                                    }`}>
+                                        <p>{msg.content}</p>
+                                        <p className={`text-[10px] mt-1 text-right ${msg.sender === 'me' ? 'text-blue-200' : 'text-gray-400'}`}>
+                                            {new Date(msg.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                                        </p>
                                     </div>
                                 </div>
-                            )}
+                             ))}
+                             <div ref={messagesEndRef} />
                         </div>
 
                         {/* Input Area */}
-                        <div className="p-4 bg-black/20 border-t border-white/5">
-                            <input
-                                type="text"
-                                placeholder={`Message ${selectedFriend.username}...`}
-                                className="w-full bg-slate-800/50 border border-white/10 rounded-lg py-3 px-4 text-sm text-white focus:outline-none focus:border-blue-500/50"
-                                disabled
-                            />
-                        </div>
+                        <form onSubmit={sendMessage} className="p-4 bg-black/20 border-t border-white/5 backdrop-blur-md">
+                            <div className="relative">
+                                <input
+                                    type="text"
+                                    value={newMessage}
+                                    onChange={(e) => setNewMessage(e.target.value)}
+                                    placeholder={`Message ${selectedFriend.username}...`}
+                                    className="w-full bg-slate-800/50 border border-white/10 rounded-full py-3 pl-5 pr-12 text-sm text-white focus:outline-none focus:border-blue-500/50 focus:bg-slate-800 transition-all placeholder:text-gray-500"
+                                />
+                                <button 
+                                    type="submit"
+                                    disabled={!newMessage.trim()}
+                                    className="absolute right-2 top-1.5 p-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-full transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                    <Send size={16} />
+                                </button>
+                            </div>
+                        </form>
                     </div>
                 ) : (
                     <div className="flex-1 flex flex-col items-center justify-center text-gray-500 space-y-4">

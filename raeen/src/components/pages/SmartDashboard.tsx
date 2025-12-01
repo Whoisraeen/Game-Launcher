@@ -258,138 +258,308 @@ const GameRandomizer = ({ games }: { games: any[] }) => {
 };
 
 const SessionPlanner = () => {
-    // Mock calendar data
     const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-    const [events, setEvents] = useState<Record<string, string>>({});
+    const [currentDate, setCurrentDate] = useState(new Date());
+    const [sessions, setSessions] = useState<any[]>([]);
+    const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        const saved = localStorage.getItem('raeen_planner_events');
-        if (saved) {
-            setEvents(JSON.parse(saved));
-        }
-    }, []);
+        loadSessions();
+    }, [currentDate]);
 
-    const handleDayClick = (dayIndex: number) => {
-        const title = prompt("Enter session plan (e.g. 'Raid Night @ 8pm'):");
-        if (title) {
-            const newEvents = { ...events, [dayIndex]: title };
-            setEvents(newEvents);
-            localStorage.setItem('raeen_planner_events', JSON.stringify(newEvents));
+    const loadSessions = async () => {
+        setLoading(true);
+        try {
+            const year = currentDate.getFullYear();
+            const month = currentDate.getMonth();
+            const monthSessions = await window.ipcRenderer.invoke('session:getForMonth', year, month);
+            setSessions(monthSessions);
+        } catch (error) {
+            console.error('Failed to load sessions:', error);
+        } finally {
+            setLoading(false);
         }
     };
 
-    const removeEvent = (e: React.MouseEvent, dayIndex: number) => {
-        e.stopPropagation();
-        const newEvents = { ...events };
-        delete newEvents[dayIndex];
-        setEvents(newEvents);
-        localStorage.setItem('raeen_planner_events', JSON.stringify(newEvents));
-    }
+    const getDaysInMonth = () => {
+        const year = currentDate.getFullYear();
+        const month = currentDate.getMonth();
+        const firstDay = new Date(year, month, 1).getDay();
+        const daysInMonth = new Date(year, month + 1, 0).getDate();
+        return { firstDay, daysInMonth };
+    };
+
+    const handleDayClick = async (day: number) => {
+        const title = prompt("Enter session title (e.g. 'Raid Night'):");
+        if (!title) return;
+
+        const startTime = new Date(currentDate.getFullYear(), currentDate.getMonth(), day, 20, 0); // Default 8 PM
+        const endTime = new Date(startTime.getTime() + 2 * 60 * 60 * 1000); // 2 hours later
+
+        try {
+            await window.ipcRenderer.invoke('session:create', {
+                title,
+                startTime: startTime.getTime(),
+                endTime: endTime.getTime(),
+                reminder: true,
+                reminderMinutes: 15
+            });
+            await loadSessions();
+        } catch (error) {
+            console.error('Failed to create session:', error);
+        }
+    };
+
+    const deleteSession = async (sessionId: string) => {
+        try {
+            await window.ipcRenderer.invoke('session:delete', sessionId);
+            await loadSessions();
+        } catch (error) {
+            console.error('Failed to delete session:', error);
+        }
+    };
+
+    const getSessionsForDay = (day: number) => {
+        return sessions.filter(session => {
+            const sessionDate = new Date(session.startTime);
+            return sessionDate.getDate() === day &&
+                   sessionDate.getMonth() === currentDate.getMonth() &&
+                   sessionDate.getFullYear() === currentDate.getFullYear();
+        });
+    };
+
+    const { firstDay, daysInMonth } = getDaysInMonth();
+    const today = new Date();
+    const isCurrentMonth = today.getMonth() === currentDate.getMonth() && today.getFullYear() === currentDate.getFullYear();
 
     return (
         <div className="space-y-8">
             <div className="flex items-center justify-between">
                 <h2 className="text-2xl font-bold text-white">Gaming Schedule</h2>
-                <button className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-sm font-medium">
-                    + Schedule Session
-                </button>
-            </div>
-
-            <div className="grid grid-cols-7 gap-4">
-                {days.map(day => (
-                    <div key={day} className="text-center text-gray-500 font-bold uppercase text-xs mb-2">{day}</div>
-                ))}
-                {Array.from({ length: 35 }).map((_, i) => {
-                    const isToday = i === 14; // Mock today
-                    const hasEvent = !!events[i];
-                    return (
-                        <div 
-                            key={i} 
-                            onClick={() => handleDayClick(i)}
-                            className={`aspect-square rounded-xl border cursor-pointer ${isToday ? 'border-blue-500 bg-blue-500/10' : 'border-white/5 bg-black/20'} p-2 relative group hover:border-white/20 transition-colors`}
+                <div className="flex items-center gap-4">
+                    <div className="flex items-center gap-2">
+                        <button
+                            onClick={() => setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() - 1))}
+                            className="px-3 py-1 bg-white/10 hover:bg-white/20 text-white rounded-lg text-sm"
                         >
-                            <span className={`text-sm ${isToday ? 'text-blue-400 font-bold' : 'text-gray-400'}`}>{i + 1}</span>
-                            {hasEvent && (
-                                <div className="mt-2 p-1.5 bg-purple-600/20 border border-purple-500/30 rounded text-[10px] text-purple-200 truncate relative group/event">
-                                    {events[i]}
-                                    <div 
-                                        className="absolute top-0 right-0 bottom-0 left-0 bg-red-500/80 hidden group-hover/event:flex items-center justify-center text-white cursor-pointer"
-                                        onClick={(e) => removeEvent(e, i)}
-                                    >×</div>
-                                </div>
-                            )}
-                        </div>
-                    );
-                })}
-            </div>
-
-            <div className="bg-black/20 rounded-xl p-6 border border-white/5">
-                <h3 className="text-lg font-bold text-white mb-4">Upcoming Sessions</h3>
-                <div className="space-y-3">
-                    {Object.entries(events).map(([day, title]) => (
-                         <div key={day} className="flex items-center gap-4 p-3 bg-white/5 rounded-lg">
-                            <div className="p-3 bg-purple-600/20 rounded-lg text-purple-400">
-                                <CalendarIcon size={20} />
-                            </div>
-                            <div className="flex-1">
-                                <h4 className="text-white font-medium">{title}</h4>
-                                <p className="text-xs text-gray-400">Day {parseInt(day) + 1}</p>
-                            </div>
-                        </div>
-                    ))}
-                    {Object.keys(events).length === 0 && <p className="text-gray-500">No sessions planned.</p>}
+                            ←
+                        </button>
+                        <span className="text-white font-medium min-w-[140px] text-center">
+                            {currentDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+                        </span>
+                        <button
+                            onClick={() => setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + 1))}
+                            className="px-3 py-1 bg-white/10 hover:bg-white/20 text-white rounded-lg text-sm"
+                        >
+                            →
+                        </button>
+                    </div>
+                    <button
+                        onClick={() => setCurrentDate(new Date())}
+                        className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-sm font-medium"
+                    >
+                        Today
+                    </button>
                 </div>
             </div>
+
+            {loading ? (
+                <div className="text-center text-gray-400 py-8">Loading sessions...</div>
+            ) : (
+                <>
+                    <div className="grid grid-cols-7 gap-4">
+                        {days.map(day => (
+                            <div key={day} className="text-center text-gray-500 font-bold uppercase text-xs mb-2">{day}</div>
+                        ))}
+                        {Array.from({ length: firstDay }).map((_, i) => (
+                            <div key={`empty-${i}`} className="aspect-square" />
+                        ))}
+                        {Array.from({ length: daysInMonth }).map((_, i) => {
+                            const day = i + 1;
+                            const isToday = isCurrentMonth && day === today.getDate();
+                            const daySessions = getSessionsForDay(day);
+                            const hasEvent = daySessions.length > 0;
+
+                            return (
+                                <div
+                                    key={day}
+                                    onClick={() => handleDayClick(day)}
+                                    className={`aspect-square rounded-xl border cursor-pointer ${
+                                        isToday ? 'border-blue-500 bg-blue-500/10' : 'border-white/5 bg-black/20'
+                                    } p-2 relative group hover:border-white/20 transition-colors`}
+                                >
+                                    <span className={`text-sm ${isToday ? 'text-blue-400 font-bold' : 'text-gray-400'}`}>
+                                        {day}
+                                    </span>
+                                    {hasEvent && (
+                                        <div className="mt-1 space-y-1">
+                                            {daySessions.slice(0, 2).map(session => (
+                                                <div
+                                                    key={session.id}
+                                                    className="p-1 bg-purple-600/20 border border-purple-500/30 rounded text-[9px] text-purple-200 truncate relative group/event"
+                                                    onClick={(e) => e.stopPropagation()}
+                                                >
+                                                    {session.title}
+                                                    <button
+                                                        className="absolute inset-0 bg-red-500/80 hidden group-hover/event:flex items-center justify-center text-white text-xs"
+                                                        onClick={() => deleteSession(session.id)}
+                                                    >
+                                                        ×
+                                                    </button>
+                                                </div>
+                                            ))}
+                                            {daySessions.length > 2 && (
+                                                <div className="text-[9px] text-gray-500 text-center">+{daySessions.length - 2}</div>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+                            );
+                        })}
+                    </div>
+
+                    <div className="bg-black/20 rounded-xl p-6 border border-white/5">
+                        <h3 className="text-lg font-bold text-white mb-4">Upcoming Sessions</h3>
+                        <div className="space-y-3">
+                            {sessions
+                                .filter(s => s.startTime >= Date.now())
+                                .sort((a, b) => a.startTime - b.startTime)
+                                .slice(0, 5)
+                                .map(session => (
+                                    <div key={session.id} className="flex items-center gap-4 p-3 bg-white/5 rounded-lg">
+                                        <div className="p-3 bg-purple-600/20 rounded-lg text-purple-400">
+                                            <CalendarIcon size={20} />
+                                        </div>
+                                        <div className="flex-1">
+                                            <h4 className="text-white font-medium">{session.title}</h4>
+                                            <p className="text-xs text-gray-400">
+                                                {new Date(session.startTime).toLocaleDateString('en-US', {
+                                                    month: 'short',
+                                                    day: 'numeric',
+                                                    hour: 'numeric',
+                                                    minute: '2-digit'
+                                                })}
+                                            </p>
+                                        </div>
+                                        <button
+                                            onClick={() => deleteSession(session.id)}
+                                            className="px-3 py-1 text-xs text-red-400 hover:bg-red-500/20 rounded transition-colors"
+                                        >
+                                            Delete
+                                        </button>
+                                    </div>
+                                ))}
+                            {sessions.filter(s => s.startTime >= Date.now()).length === 0 && (
+                                <p className="text-gray-500">No upcoming sessions planned.</p>
+                            )}
+                        </div>
+                    </div>
+                </>
+            )}
         </div>
     );
 };
 
 const ExpenseTracker = () => {
-    // Mock data for charts
-    const data = [
-        { name: 'Jan', amount: 60 },
-        { name: 'Feb', amount: 0 },
-        { name: 'Mar', amount: 120 },
-        { name: 'Apr', amount: 45 },
-        { name: 'May', amount: 20 },
-        { name: 'Jun', amount: 70 },
-    ];
+    const [stats, setStats] = useState<any>(null);
+    const [loading, setLoading] = useState(true);
+    const [importing, setImporting] = useState(false);
+    const currentYear = new Date().getFullYear();
 
-    const genreData = [
-        { name: 'RPG', value: 400 },
-        { name: 'FPS', value: 300 },
-        { name: 'Indie', value: 300 },
-        { name: 'Strategy', value: 200 },
-    ];
+    useEffect(() => {
+        loadStats();
+    }, []);
 
-    const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042'];
+    const loadStats = async () => {
+        setLoading(true);
+        try {
+            const expenseStats = await window.ipcRenderer.invoke('expenses:getStats', currentYear);
+            setStats(expenseStats);
+        } catch (error) {
+            console.error('Failed to load expense stats:', error);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleImport = async () => {
+        if (!confirm('Import estimated prices for games in your library? This will add approximate purchase prices.')) {
+            return;
+        }
+
+        setImporting(true);
+        try {
+            const imported = await window.ipcRenderer.invoke('expenses:importFromLibrary');
+            alert(`Imported ${imported} games!`);
+            await loadStats();
+        } catch (error) {
+            console.error('Failed to import from library:', error);
+            alert('Failed to import games. Please try again.');
+        } finally {
+            setImporting(false);
+        }
+    };
+
+    const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8', '#82ca9d'];
+
+    if (loading) {
+        return <div className="text-center text-gray-400 py-8">Loading expense data...</div>;
+    }
+
+    if (!stats) {
+        return <div className="text-center text-gray-400 py-8">Failed to load expense data</div>;
+    }
+
+    const topGenre = stats.genreBreakdown.length > 0 ? stats.genreBreakdown[0] : null;
+    const genrePercentage = topGenre && stats.totalSpent > 0
+        ? Math.round((topGenre.amount / stats.totalSpent) * 100)
+        : 0;
 
     return (
         <div className="space-y-8">
+            <div className="flex justify-between items-center">
+                <h2 className="text-2xl font-bold text-white">Gaming Expenses {currentYear}</h2>
+                <button
+                    onClick={handleImport}
+                    disabled={importing}
+                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 text-white rounded-lg text-sm font-medium transition-colors"
+                >
+                    {importing ? 'Importing...' : 'Import Library Games'}
+                </button>
+            </div>
+
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <div className="bg-black/20 p-6 rounded-xl border border-white/5">
                     <div className="flex items-center gap-3 mb-2">
                         <div className="p-2 bg-green-500/20 rounded-lg text-green-400"><DollarSign size={20} /></div>
                         <span className="text-gray-400 text-sm">Total Spent (YTD)</span>
                     </div>
-                    <div className="text-3xl font-bold text-white">$315.00</div>
-                    <div className="text-xs text-green-400 mt-1 flex items-center gap-1"><TrendingUp size={12} /> +12% vs last year</div>
+                    <div className="text-3xl font-bold text-white">${stats.totalSpent.toFixed(2)}</div>
+                    <div className="text-xs text-gray-500 mt-1">{stats.totalGames} games purchased</div>
                 </div>
                 <div className="bg-black/20 p-6 rounded-xl border border-white/5">
                     <div className="flex items-center gap-3 mb-2">
                         <div className="p-2 bg-blue-500/20 rounded-lg text-blue-400"><Clock size={20} /></div>
                         <span className="text-gray-400 text-sm">Cost per Hour</span>
                     </div>
-                    <div className="text-3xl font-bold text-white">$0.42</div>
-                    <div className="text-xs text-gray-500 mt-1">Based on 750h playtime</div>
+                    <div className="text-3xl font-bold text-white">
+                        ${stats.costPerHour > 0 ? stats.costPerHour.toFixed(2) : '0.00'}
+                    </div>
+                    <div className="text-xs text-gray-500 mt-1">
+                        Based on {Math.round(stats.totalPlaytime)}h playtime
+                    </div>
                 </div>
                 <div className="bg-black/20 p-6 rounded-xl border border-white/5">
                     <div className="flex items-center gap-3 mb-2">
                         <div className="p-2 bg-purple-500/20 rounded-lg text-purple-400"><Filter size={20} /></div>
                         <span className="text-gray-400 text-sm">Most Expensive Genre</span>
                     </div>
-                    <div className="text-3xl font-bold text-white">RPG</div>
-                    <div className="text-xs text-gray-500 mt-1">45% of total spend</div>
+                    <div className="text-3xl font-bold text-white">
+                        {topGenre?.genre || 'N/A'}
+                    </div>
+                    <div className="text-xs text-gray-500 mt-1">
+                        {genrePercentage}% of total spend
+                    </div>
                 </div>
             </div>
 
@@ -397,9 +567,9 @@ const ExpenseTracker = () => {
                 <div className="bg-black/20 p-6 rounded-xl border border-white/5 h-80">
                     <h3 className="text-lg font-bold text-white mb-6">Monthly Spending</h3>
                     <ResponsiveContainer width="100%" height="100%">
-                        <BarChart data={data}>
+                        <BarChart data={stats.monthlySpending}>
                             <CartesianGrid strokeDasharray="3 3" stroke="#333" vertical={false} />
-                            <XAxis dataKey="name" stroke="#666" fontSize={12} tickLine={false} axisLine={false} />
+                            <XAxis dataKey="month" stroke="#666" fontSize={12} tickLine={false} axisLine={false} />
                             <YAxis stroke="#666" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(val) => `$${val}`} />
                             <Tooltip
                                 contentStyle={{ backgroundColor: '#1a1a1a', border: '1px solid #333', borderRadius: '8px' }}
@@ -413,30 +583,50 @@ const ExpenseTracker = () => {
 
                 <div className="bg-black/20 p-6 rounded-xl border border-white/5 h-80">
                     <h3 className="text-lg font-bold text-white mb-6">Spending by Genre</h3>
-                    <ResponsiveContainer width="100%" height="100%">
-                        <PieChart>
-                            <Pie
-                                data={genreData}
-                                cx="50%"
-                                cy="50%"
-                                innerRadius={60}
-                                outerRadius={80}
-                                fill="#8884d8"
-                                paddingAngle={5}
-                                dataKey="value"
-                            >
-                                {genreData.map((_, index) => (
-                                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                                ))}
-                            </Pie>
-                            <Tooltip
-                                contentStyle={{ backgroundColor: '#1a1a1a', border: '1px solid #333', borderRadius: '8px' }}
-                                itemStyle={{ color: '#fff' }}
-                            />
-                        </PieChart>
-                    </ResponsiveContainer>
+                    {stats.genreBreakdown.length > 0 ? (
+                        <ResponsiveContainer width="100%" height="100%">
+                            <PieChart>
+                                <Pie
+                                    data={stats.genreBreakdown.map((g: any) => ({ name: g.genre, value: g.amount }))}
+                                    cx="50%"
+                                    cy="50%"
+                                    innerRadius={60}
+                                    outerRadius={80}
+                                    fill="#8884d8"
+                                    paddingAngle={5}
+                                    dataKey="value"
+                                    label={(entry) => `${entry.name}: $${entry.value.toFixed(0)}`}
+                                >
+                                    {stats.genreBreakdown.map((_: any, index: number) => (
+                                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                                    ))}
+                                </Pie>
+                                <Tooltip
+                                    contentStyle={{ backgroundColor: '#1a1a1a', border: '1px solid #333', borderRadius: '8px' }}
+                                    itemStyle={{ color: '#fff' }}
+                                    formatter={(value: any) => `$${value.toFixed(2)}`}
+                                />
+                            </PieChart>
+                        </ResponsiveContainer>
+                    ) : (
+                        <div className="flex items-center justify-center h-full text-gray-500">
+                            No purchase data available
+                        </div>
+                    )}
                 </div>
             </div>
+
+            {stats.mostExpensiveGame && (
+                <div className="bg-black/20 p-6 rounded-xl border border-white/5">
+                    <h3 className="text-lg font-bold text-white mb-3">Most Expensive Purchase</h3>
+                    <div className="flex items-center justify-between">
+                        <span className="text-white font-medium">{stats.mostExpensiveGame.name}</span>
+                        <span className="text-2xl font-bold text-green-400">
+                            ${stats.mostExpensiveGame.price.toFixed(2)}
+                        </span>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

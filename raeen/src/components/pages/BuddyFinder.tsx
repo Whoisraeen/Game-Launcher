@@ -71,7 +71,6 @@ const BuddyFinder: React.FC = () => {
         // Fetch friends (simplified query - normally requires join table logic)
         // For now, we'll just fetch all profiles that are NOT me as "potential friends" 
         // In a real app, you'd query the 'friendships' table.
-        // Let's implement the proper query assuming friendships table exists
         
         /*
          const { data: friendIds } = await supabase
@@ -80,8 +79,7 @@ const BuddyFinder: React.FC = () => {
              .eq('user_id', userId);
         */
 
-        // Mocking friends for now since we might not have data in the new DB
-        // But let's try to fetch random profiles to populate the list if empty
+        // Try to fetch random profiles to populate the list if empty
         const { data: allProfiles } = await supabase
             .from('profiles')
             .select('*')

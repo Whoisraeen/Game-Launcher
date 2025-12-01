@@ -37,6 +37,12 @@ export interface UserSettings {
     optimizeOnLaunch: boolean;
     showOverlay: boolean;
     targetFps?: number;
+    memoryCleanup?: boolean;
+  };
+  gaming: {
+    preGameHealthCheck: boolean;
+    autoCloseBackgroundApps: boolean;
+    crashAnalysis: boolean;
   };
 }
 
@@ -77,6 +83,12 @@ const DEFAULT_SETTINGS: UserSettings = {
     optimizeOnLaunch: false,
     showOverlay: false,
     targetFps: 60,
+    memoryCleanup: true,
+  },
+  gaming: {
+    preGameHealthCheck: true,
+    autoCloseBackgroundApps: false,
+    crashAnalysis: true,
   },
 };
 

@@ -505,9 +505,13 @@ export const useGameStore = create<GameState>((set, get) => ({
     },
 
     loadAchievements: async () => {
-        // Mock implementation for now as backend doesn't have achievements table yet
-        // But we can structure it to be ready
-        set({ achievements: [] });
+        try {
+            const result = await window.ipcRenderer.invoke('achievements:getRecentlyUnlocked', 20);
+            set({ achievements: Array.isArray(result) ? result : [] });
+        } catch (error) {
+            console.error('Failed to load achievements:', error);
+            set({ achievements: [] });
+        }
     },
 
     openExternal: async (url: string) => {

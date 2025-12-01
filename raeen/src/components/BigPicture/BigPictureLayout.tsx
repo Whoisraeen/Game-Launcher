@@ -284,9 +284,12 @@ const BigPictureLayout: React.FC<BigPictureLayoutProps> = ({ onExit }) => {
                                                 `}
                                             >
                                                 <img
-                                                    src={game.cover || 'https://via.placeholder.com/300x450'}
+                                                    src={game.cover}
                                                     className="w-full h-full object-cover"
                                                     loading="lazy"
+                                                    onError={(e) => {
+                                                        e.currentTarget.src = 'https://upload.wikimedia.org/wikipedia/commons/thumb/a/ac/No_image_available.svg/600px-No_image_available.svg.png'; // Use a generic 'No Image'
+                                                    }}
                                                 />
                                                 {isActive && (
                                                     <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent flex flex-col justify-end p-4 animate-fade-in">

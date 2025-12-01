@@ -1,18 +1,18 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { Play, Search, Filter, Heart, LayoutGrid, List as ListIcon, Dices } from 'lucide-react';
+import { Play, Search, Filter, Heart, LayoutGrid, List as ListIcon, Dices, Layers3 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { 
-  DndContext, 
+import {
+  DndContext,
   closestCenter,
-  KeyboardSensor, 
-  PointerSensor, 
-  useSensor, 
-  useSensors, 
-  DragEndEvent 
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent
 } from '@dnd-kit/core';
-import { 
-  SortableContext, 
-  sortableKeyboardCoordinates, 
+import {
+  SortableContext,
+  sortableKeyboardCoordinates,
   rectSortingStrategy,
   useSortable
 } from '@dnd-kit/sortable';
@@ -20,7 +20,7 @@ import { CSS } from '@dnd-kit/utilities';
 
 import { useGameStore } from '../stores/gameStore';
 import { Game } from '../types';
-import { getPlatformIcon } from '../data/LauncherData';
+import { getPlatformIcon } from '../utils/platformUtils';
 import GameDetailsModal from './GameDetailsModal';
 import { GameContextMenu } from './GameContextMenu';
 import { EditGameModal } from './EditGameModal';
@@ -29,10 +29,14 @@ import Fuse from 'fuse.js';
 import { useUIStore } from '../stores/uiStore';
 import { getDominantColor } from '../utils/colorUtils';
 import { Skeleton } from './Skeleton';
+import CoverFlow from './CoverFlow';
+import HealthCheckModal from './HealthCheckModal';
+import { useLaunchGame } from '../hooks/useLaunchGame';
 
 const GameGrid: React.FC = () => {
-    const { games, collections, selectedCollectionId, setSelectedCollectionId, loadGames, launchGame, toggleFavorite, reorderGames, mergeGames, isLoading } = useGameStore();
+    const { games, collections, selectedCollectionId, setSelectedCollectionId, loadGames, toggleFavorite, reorderGames, mergeGames, isLoading } = useGameStore();
     const { setDynamicAccentColor, selectedGame, setSelectedGame } = useUIStore(); // UI Store
+    const { initiateLaunch, continueLaunch, closeHealthCheck, launchState } = useLaunchGame();
     const [activeTab, setActiveTab] = useState('ALL GAMES');
 
     // Sync activeTab with selectedCollectionId from store (e.g. from Collections page navigation)
@@ -53,7 +57,7 @@ const GameGrid: React.FC = () => {
     };
     const [selectedGenre, setSelectedGenre] = useState<string | null>(null);
     const [selectedPlatform, setSelectedPlatform] = useState<string | null>(null);
-    const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
+    const [viewMode, setViewMode] = useState<'grid' | 'list' | 'coverFlow'>('grid');
     const [searchQuery, setSearchQuery] = useState('');
     // const [selectedGame, setSelectedGame] = useState<Game | null>(null); // Moved to UI Store
     const [sortBy] = useState<'title' | 'playtime' | 'lastPlayed' | 'rating' | 'addedAt'>('title');
@@ -222,14 +226,23 @@ const GameGrid: React.FC = () => {
                         <button
                             onClick={() => setViewMode('grid')}
                             className={`p-2 rounded-full transition-all ${viewMode === 'grid' ? 'bg-white/10 text-white' : 'text-gray-400 hover:text-white'}`}
+                            title="Grid View"
                         >
                             <LayoutGrid size={18} />
                         </button>
                         <button
                             onClick={() => setViewMode('list')}
                             className={`p-2 rounded-full transition-all ${viewMode === 'list' ? 'bg-white/10 text-white' : 'text-gray-400 hover:text-white'}`}
+                            title="List View"
                         >
                             <ListIcon size={18} />
+                        </button>
+                        <button
+                            onClick={() => setViewMode('coverFlow')}
+                            className={`p-2 rounded-full transition-all ${viewMode === 'coverFlow' ? 'bg-white/10 text-white' : 'text-gray-400 hover:text-white'}`}
+                            title="Cover Flow View"
+                        >
+                            <Layers3 size={18} />
                         </button>
                     </div>
                 </div>
@@ -302,6 +315,12 @@ const GameGrid: React.FC = () => {
                                     <Skeleton key={i} className="h-[300px]" />
                                 ))}
                             </div>
+                        ) : viewMode === 'coverFlow' ? (
+                            <CoverFlow
+                                games={filteredGames}
+                                onGameClick={handleGameClick}
+                                onLaunch={initiateLaunch}
+                            />
                         ) : viewMode === 'grid' ? (
                             <motion.div layout className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-4 p-4 overflow-y-auto content-start">
                                 <AnimatePresence mode='popLayout'>
@@ -320,7 +339,7 @@ const GameGrid: React.FC = () => {
                                                 onClick={handleGameClick}
                                                 onContextMenu={handleContextMenu}
                                                 toggleFavorite={toggleFavorite}
-                                                launchGame={launchGame}
+                                                launchGame={initiateLaunch}
                                             />
                                         </motion.div>
                                     ))}
@@ -360,7 +379,7 @@ const GameGrid: React.FC = () => {
                                                 className="p-3 rounded-full bg-white text-black opacity-0 group-hover:opacity-100 transition-opacity"
                                                 onClick={(e) => {
                                                     e.stopPropagation();
-                                                    launchGame(game.id);
+                                                    initiateLaunch(game.id);
                                                 }}
                                             >
                                                 <Play size={20} fill="currentColor" />
@@ -380,7 +399,7 @@ const GameGrid: React.FC = () => {
                     game={selectedGame}
                     onClose={handleCloseDetails} // Use new handler
                     onPlay={() => {
-                        launchGame(selectedGame.id);
+                        initiateLaunch(selectedGame.id);
                         handleCloseDetails();
                     }}
                 />
@@ -458,6 +477,15 @@ const GameGrid: React.FC = () => {
                         </div>
                     </div>
                 </div>
+            )}
+
+            {/* Health Check Modal */}
+            {launchState.showHealthCheck && (
+                <HealthCheckModal
+                    gameName={launchState.pendingGameName || undefined}
+                    onClose={closeHealthCheck}
+                    onContinue={continueLaunch}
+                />
             )}
         </div>
     );

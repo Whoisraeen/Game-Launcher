@@ -4,7 +4,8 @@ import { app } from 'electron';
 import chokidar from 'chokidar';
 import archiver from 'archiver';
 import unzipper from 'unzipper';
-import { v4 as uuidv4 } from 'uuid';
+import { getDb } from '../database';
+import { SupabaseService } from './supabaseService';
 
 interface SaveConfig {
     gameId: string;
@@ -28,6 +29,8 @@ export class SaveManagerService {
     private configs: SaveConfig[] = [];
     private watchers: Map<string, any> = new Map();
     private cloudPath: string | null = null;
+    private cloudSyncEnabled: boolean = false;
+    private supabaseService: SupabaseService | null = null;
 
     constructor() {
         const userData = (app && app.getPath) ? app.getPath('userData') : '.';
@@ -42,12 +45,17 @@ export class SaveManagerService {
         this.initWatchers();
     }
 
+    public setSupabaseService(service: SupabaseService) {
+        this.supabaseService = service;
+    }
+
     private loadConfig() {
         try {
             if (fs.existsSync(this.configPath)) {
                 const data = JSON.parse(fs.readFileSync(this.configPath, 'utf-8'));
                 this.configs = data.configs || [];
                 this.cloudPath = data.cloudPath || null;
+                this.cloudSyncEnabled = data.cloudSyncEnabled || false;
             }
         } catch (e) {
             console.error('Failed to load save config', e);
@@ -59,7 +67,8 @@ export class SaveManagerService {
         try {
             fs.writeFileSync(this.configPath, JSON.stringify({
                 configs: this.configs,
-                cloudPath: this.cloudPath
+                cloudPath: this.cloudPath,
+                cloudSyncEnabled: this.cloudSyncEnabled
             }, null, 2));
         } catch (e) {
             console.error('Failed to save save config', e);
@@ -235,6 +244,15 @@ export class SaveManagerService {
         this.saveConfig();
     }
 
+    public setCloudSyncEnabled(enabled: boolean) {
+        this.cloudSyncEnabled = enabled;
+        this.saveConfig();
+    }
+
+    public getCloudSyncEnabled() {
+        return this.cloudSyncEnabled;
+    }
+
     public async createBackup(gameId: string, isAuto: boolean = false): Promise<BackupEntry | null> {
         const config = this.configs.find(c => c.gameId === gameId);
         if (!config || !fs.existsSync(config.path)) return null;
@@ -256,11 +274,25 @@ export class SaveManagerService {
         const archive = archiver('zip', { zlib: { level: 9 } });
 
         return new Promise((resolve, reject) => {
-            output.on('close', () => {
+            output.on('close', async () => {
                 const stats = fs.statSync(destPath);
                 config.lastBackup = timestamp;
                 this.saveConfig();
                 
+                // Cloud Sync (Supabase)
+                if (this.cloudSyncEnabled && this.supabaseService && this.supabaseService.isAuthenticated()) {
+                    try {
+                        const db = getDb();
+                        const game = db.prepare('SELECT title, platform FROM games WHERE id = ?').get(gameId) as any;
+                        if (game) {
+                            console.log(`Uploading backup for ${game.title} to Supabase...`);
+                            await this.supabaseService.uploadSaveGame(gameId, game.title, game.platform, destPath);
+                        }
+                    } catch (err) {
+                        console.error('Failed to upload backup to Supabase:', err);
+                    }
+                }
+
                 resolve({
                     id: uuidv4(),
                     gameId,

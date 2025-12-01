@@ -11,7 +11,10 @@ import { ProcessManager } from './processManager';
 import { PlaytimeTracker } from './playtimeTracker';
 import { DiscordManager } from './discordManager';
 import { PerformanceService } from './PerformanceService';
+import { CrashAnalyzerService } from './crashAnalyzerService';
+import { NotificationService } from './notificationService';
 import { SettingsManager } from './settingsManager';
+import { GamingSessionService } from './gamingSessionService';
 
 export class GameManager {
     private steamLibrary: SteamLibrary;
@@ -21,6 +24,9 @@ export class GameManager {
     private processManager: ProcessManager;
     private playtimeTracker: PlaytimeTracker;
     private performanceService?: PerformanceService;
+    private crashAnalyzerService: CrashAnalyzerService;
+    private notificationService: NotificationService;
+    private gamingSessionService: GamingSessionService;
 
     constructor() {
         this.steamLibrary = new SteamLibrary();
@@ -29,6 +35,9 @@ export class GameManager {
         this.metadataFetcher = new MetadataFetcher();
         this.processManager = new ProcessManager();
         this.playtimeTracker = new PlaytimeTracker();
+        this.crashAnalyzerService = new CrashAnalyzerService();
+        this.notificationService = new NotificationService();
+        this.gamingSessionService = new GamingSessionService();
     }
 
     setPerformanceService(service: PerformanceService) {
@@ -378,6 +387,46 @@ export class GameManager {
                     clearInterval(monitorInterval);
                     console.log(`Game process exited: ${processName}`);
                     DiscordManager.getInstance().setIdle();
+                    this.gamingSessionService.stopMonitoring();
+
+                    // Trigger memory cleanup after game session
+                    try {
+                        const settingsManager = new SettingsManager();
+                        const settings = settingsManager.getAllSettings();
+                        // Check if user has enabled post-session cleanup (defaulting to true)
+                        const cleanupEnabled = settings.performance.memoryCleanup !== false;
+
+                        if (cleanupEnabled) {
+                            console.log('Starting post-session memory cleanup...');
+                            const result = await this.processManager.cleanMemoryAfterSession();
+                            if (result.success) {
+                                console.log('Memory cleanup completed:', result.actions.join(', '));
+                            }
+                        }
+
+                        // Auto Crash Analysis
+                        if (settings.gaming?.crashAnalysis) {
+                            console.log('Running post-game crash analysis...');
+                            // Small delay to let Windows Event Log populate
+                            setTimeout(async () => {
+                                try {
+                                    const report = await this.crashAnalyzerService.analyzeCrash(game.id, game.title);
+                                    
+                                    // If we found something significant
+                                    if (report.relevantLogs.length > 0 || report.crashType !== 'unknown') {
+                                        console.log(`Crash detected for ${game.title}: ${report.crashType}`);
+                                        this.notificationService.notifyCrash(game.title);
+                                    } else {
+                                        console.log(`No crash detected for ${game.title}`);
+                                    }
+                                } catch (error) {
+                                    console.error('Error during auto crash analysis:', error);
+                                }
+                            }, 3000);
+                        }
+                    } catch (err) {
+                        console.error('Error during post-session cleanup:', err);
+                    }
                 }
             }, 5000);
         } else {
@@ -401,6 +450,34 @@ export class GameManager {
 
         // Set Discord Activity
         DiscordManager.getInstance().setActivity(game.title, 'Playing');
+
+        // Start Session Monitoring (Breaks, Time Limits)
+        try {
+            const settingsManager = new SettingsManager();
+            const settings = settingsManager.getAllSettings();
+            
+            // Check for planned session
+            const plannedSession = this.gamingSessionService.getSessionForGameNow(game.id);
+            
+            let breakInterval = 60; // Default 60 mins
+            let limitMinutes: number | undefined = undefined;
+
+            if (plannedSession) {
+                console.log(`Found planned session: ${plannedSession.title}`);
+                if (plannedSession.breakInterval) {
+                    breakInterval = plannedSession.breakInterval;
+                }
+                // Calculate remaining minutes
+                const now = Date.now();
+                if (plannedSession.endTime > now) {
+                    limitMinutes = Math.floor((plannedSession.endTime - now) / 60000);
+                }
+            }
+
+            this.gamingSessionService.startMonitoring(game.id, game.title, breakInterval, limitMinutes);
+        } catch (e) {
+            console.error('Failed to start session monitoring:', e);
+        }
         
         // Start monitoring process for Discord RPC status
         this.monitorGameProcess(game).catch(err => console.error('Error monitoring game process:', err));

@@ -21,6 +21,18 @@ import { ObsService, ObsConnectionConfig } from './services/ObsService'
 import { RGBService } from './services/RGBService'
 import { FanControlService } from './services/FanControlService'
 import { HLTBService } from './services/HLTBService'
+import { NotificationService } from './services/notificationService'
+import { AchievementService } from './services/achievementService'
+import { HealthCheckService } from './services/healthCheckService'
+import { CrashAnalyzerService } from './services/crashAnalyzerService'
+import { UpdateManagerService } from './services/updateManagerService'
+import { ScreenshotService } from './services/screenshotService'
+import { DLCTrackerService } from './services/dlcTrackerService'
+import { PriceTrackerService } from './services/priceTrackerService'
+import { SupabaseService } from './services/supabaseService'
+import { GamingSessionService } from './services/gamingSessionService'
+import { ExpenseTrackerService } from './services/expenseTrackerService'
+import { StoreService } from './services/storeService'
 
 // Configure Logger
 log.initialize();
@@ -52,6 +64,18 @@ let rgbService: RGBService;
 let fanControlService: FanControlService;
 let hltbService: HLTBService;
 let performanceService: PerformanceService;
+let notificationService: NotificationService;
+let achievementService: AchievementService;
+let healthCheckService: HealthCheckService;
+let crashAnalyzerService: CrashAnalyzerService;
+let updateManagerService: UpdateManagerService;
+let screenshotService: ScreenshotService;
+let dlcTrackerService: DLCTrackerService;
+let priceTrackerService: PriceTrackerService;
+let supabaseService: SupabaseService;
+let gamingSessionService: GamingSessionService;
+let expenseTrackerService: ExpenseTrackerService;
+let storeService: StoreService;
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -491,6 +515,85 @@ function createWindow() {
     }
   });
 
+  ipcMain.handle('system:executeCommand', async (_, command: string) => {
+    try {
+      const { exec } = require('child_process');
+      return new Promise((resolve, reject) => {
+        exec(command, (error: Error | null, stdout: string, stderr: string) => {
+          if (error) {
+            console.error('Command execution error:', error);
+            reject(error);
+            return;
+          }
+          resolve({ success: true, stdout, stderr });
+        });
+      });
+    } catch (error) {
+      console.error('Failed to execute command:', command, error);
+      throw error;
+    }
+  });
+
+  // Alias for system:executeCommand
+  ipcMain.handle('system:execute', async (_, command: string) => {
+    try {
+      const { exec } = require('child_process');
+      return new Promise((resolve, reject) => {
+        exec(command, (error: Error | null, stdout: string, stderr: string) => {
+          if (error) {
+            console.error('Command execution error:', error);
+            reject(error);
+            return;
+          }
+          resolve({ success: true, stdout, stderr });
+        });
+      });
+    } catch (error) {
+      console.error('Failed to execute command:', command, error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle('system:getFolderSize', async (_, folderPath: string) => {
+    try {
+        // Use fast-folder-size or similar logic. For now, simple recursive Node.js fs
+        const fs = require('fs');
+        const path = require('path');
+
+        const getAllFiles = (dirPath: string, arrayOfFiles: string[] = []) => {
+            const files = fs.readdirSync(dirPath);
+
+            files.forEach((file: string) => {
+                if (fs.statSync(dirPath + "/" + file).isDirectory()) {
+                    arrayOfFiles = getAllFiles(dirPath + "/" + file, arrayOfFiles);
+                } else {
+                    arrayOfFiles.push(path.join(dirPath, "/", file));
+                }
+            });
+
+            return arrayOfFiles;
+        };
+
+        if (!fs.existsSync(folderPath)) return 0;
+
+        let totalSize = 0;
+        // Doing this synchronously on main thread for large folders is bad, 
+        // but for prototype it's "real" logic vs mock. 
+        // A better way is using 'du' or 'powershell'.
+        
+        // Let's use a lightweight recurse if path exists
+        const files = getAllFiles(folderPath);
+        files.forEach((filePath: string) => {
+            totalSize += fs.statSync(filePath).size;
+        });
+
+        return totalSize;
+    } catch (error) {
+        console.error('Failed to get folder size:', error);
+        return 0;
+    }
+  });
+
   ipcMain.handle('dialog:openDirectory', async () => {
     const result = await dialog.showOpenDialog({
       properties: ['openDirectory']
@@ -543,6 +646,18 @@ function createWindow() {
 
   ipcMain.handle('friends:remove', (_, id: string) => {
     return friendsManager.removeFriend(id);
+  });
+
+  ipcMain.handle('friends:getMessages', (_, friendId: string) => {
+      return friendsManager.getMessages(friendId);
+  });
+
+  ipcMain.handle('friends:sendMessage', (_, friendId: string, content: string) => {
+      return friendsManager.sendMessage(friendId, content);
+  });
+
+  ipcMain.handle('friends:markRead', (_, friendId: string) => {
+      return friendsManager.markRead(friendId);
   });
 
   ipcMain.handle('friends:importSteam', async () => {
@@ -607,6 +722,25 @@ function createWindow() {
     }
   });
 
+  // Store IPC Handlers
+  ipcMain.handle('store:getDeals', async (_, params) => {
+    try {
+        return await storeService.getDeals(params);
+    } catch (error) {
+        console.error('Failed to get deals:', error);
+        return [];
+    }
+  });
+
+  ipcMain.handle('store:getStores', async () => {
+      try {
+          return await storeService.getStores();
+      } catch (error) {
+          console.error('Failed to get stores:', error);
+          return [];
+      }
+  });
+
   // Auto-Updater IPC Handlers
   ipcMain.handle('updater:check', () => {
     return autoUpdater.checkForUpdates();
@@ -664,10 +798,22 @@ app.on('activate', () => {
 
 app.whenReady().then(() => {
   initDatabase()
+  notificationService = new NotificationService()
+  achievementService = new AchievementService(notificationService)
+  healthCheckService = new HealthCheckService()
+  crashAnalyzerService = new CrashAnalyzerService()
+  updateManagerService = new UpdateManagerService()
+  screenshotService = new ScreenshotService()
+  dlcTrackerService = new DLCTrackerService()
+  priceTrackerService = new PriceTrackerService(notificationService)
+  supabaseService = new SupabaseService()
+  gamingSessionService = new GamingSessionService()
+  expenseTrackerService = new ExpenseTrackerService()
+  storeService = new StoreService()
   gameManager = new GameManager()
   settingsManager = new SettingsManager()
   hardwareMonitor = new HardwareMonitor()
-  friendsManager = new FriendsManager()
+  friendsManager = new FriendsManager(notificationService)
   universalModManager = new UniversalModManager()
   newsManager = new NewsManager()
   recommendationManager = new RecommendationManager()
@@ -694,6 +840,706 @@ app.whenReady().then(() => {
 
   // Discord RPC
   DiscordManager.getInstance();
+
+  // Notification IPC Handlers
+  ipcMain.handle('notifications:getPreferences', () => {
+    try {
+      return notificationService.getPreferences();
+    } catch (error) {
+      console.error('Failed to get notification preferences:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle('notifications:savePreferences', (_, preferences) => {
+    try {
+      notificationService.savePreferences(preferences);
+      return true;
+    } catch (error) {
+      console.error('Failed to save notification preferences:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle('notifications:getHistory', () => {
+    try {
+      return notificationService.getHistory();
+    } catch (error) {
+      console.error('Failed to get notification history:', error);
+      return [];
+    }
+  });
+
+  ipcMain.handle('notifications:clearHistory', () => {
+    try {
+      notificationService.clearHistory();
+      return true;
+    } catch (error) {
+      console.error('Failed to clear notification history:', error);
+      return false;
+    }
+  });
+
+  // Achievement IPC Handlers
+  ipcMain.handle('achievements:getGameAchievements', (_, gameId: string) => {
+    try {
+      return achievementService.getGameAchievements(gameId);
+    } catch (error) {
+      console.error('Failed to get game achievements:', error);
+      return [];
+    }
+  });
+
+  ipcMain.handle('achievements:getGameStats', (_, gameId: string) => {
+    try {
+      return achievementService.getGameAchievementStats(gameId);
+    } catch (error) {
+      console.error('Failed to get game achievement stats:', error);
+      return { total: 0, unlocked: 0, percent: 0 };
+    }
+  });
+
+  ipcMain.handle('achievements:syncSteam', async (_, gameId: string, steamAppId: string) => {
+    try {
+      return await achievementService.syncSteamAchievements(gameId, steamAppId);
+    } catch (error) {
+      console.error('Failed to sync Steam achievements:', error);
+      return false;
+    }
+  });
+
+  ipcMain.handle('achievements:syncAllSteam', async () => {
+    try {
+      return await achievementService.syncAllSteamAchievements();
+    } catch (error) {
+      console.error('Failed to sync all Steam achievements:', error);
+      return { success: 0, failed: 0 };
+    }
+  });
+
+  ipcMain.handle('achievements:getRecentlyUnlocked', (_, limit: number = 10) => {
+    try {
+      return achievementService.getRecentlyUnlocked(limit);
+    } catch (error) {
+      console.error('Failed to get recently unlocked achievements:', error);
+      return [];
+    }
+  });
+
+  ipcMain.handle('achievements:getRarestUnlocked', (_, limit: number = 10) => {
+    try {
+      return achievementService.getRarestUnlocked(limit);
+    } catch (error) {
+      console.error('Failed to get rarest unlocked achievements:', error);
+      return [];
+    }
+  });
+
+  ipcMain.handle('achievements:getOverallProgress', () => {
+    try {
+      return achievementService.getOverallProgress();
+    } catch (error) {
+      console.error('Failed to get overall achievement progress:', error);
+      return { totalGames: 0, gamesWithAchievements: 0, totalAchievements: 0, unlockedAchievements: 0, percent: 0 };
+    }
+  });
+
+  // Health Check IPC Handlers
+  ipcMain.handle('health:check', async (_, gameName?: string) => {
+    try {
+      return await healthCheckService.runHealthCheck(gameName);
+    } catch (error) {
+      console.error('Failed to run health check:', error);
+      throw error;
+    }
+  });
+
+  // Crash Analyzer IPC Handlers
+  ipcMain.handle('crash:analyze', async (_, gameId: string, gameName: string) => {
+    try {
+      return await crashAnalyzerService.analyzeCrash(gameId, gameName);
+    } catch (error) {
+      console.error('Failed to analyze crash:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle('crash:getReports', async (_, gameId: string) => {
+    try {
+      return crashAnalyzerService.getCrashReports(gameId);
+    } catch (error) {
+      console.error('Failed to get crash reports:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle('crash:voteSolution', async (_, crashId: string, solutionId: string, isUpvote: boolean) => {
+    try {
+      crashAnalyzerService.voteSolution(crashId, solutionId, isUpvote);
+      return { success: true };
+    } catch (error) {
+      console.error('Failed to vote solution:', error);
+      throw error;
+    }
+  });
+
+  // Update Manager IPC Handlers
+  ipcMain.handle('updates:checkAll', async () => {
+    try {
+      return await updateManagerService.checkForUpdates();
+    } catch (error) {
+      console.error('Failed to check for updates:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle('updates:getPending', async () => {
+    try {
+      return updateManagerService.getPendingUpdates();
+    } catch (error) {
+      console.error('Failed to get pending updates:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle('updates:getHistory', async (_, gameId: string) => {
+    try {
+      return updateManagerService.getGameUpdateHistory(gameId);
+    } catch (error) {
+      console.error('Failed to get update history:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle('updates:trigger', async (_, updateId: string) => {
+    try {
+      return await updateManagerService.triggerUpdate(updateId);
+    } catch (error) {
+      console.error('Failed to trigger update:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle('updates:dismiss', async (_, updateId: string) => {
+    try {
+      updateManagerService.dismissUpdate(updateId);
+      return { success: true };
+    } catch (error) {
+      console.error('Failed to dismiss update:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle('updates:markInstalled', async (_, updateId: string) => {
+    try {
+      updateManagerService.markAsInstalled(updateId);
+      return { success: true };
+    } catch (error) {
+      console.error('Failed to mark update as installed:', error);
+      throw error;
+    }
+  });
+
+  // Screenshot Manager IPC Handlers
+  ipcMain.handle('screenshots:scan', async () => {
+    try {
+      return await screenshotService.scanForScreenshots();
+    } catch (error) {
+      console.error('Failed to scan for screenshots:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle('screenshots:getAll', async (_, limit?: number, offset?: number) => {
+    try {
+      return screenshotService.getAllScreenshots(limit, offset);
+    } catch (error) {
+      console.error('Failed to get all screenshots:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle('screenshots:getGame', async (_, gameId: string) => {
+    try {
+      return screenshotService.getGameScreenshots(gameId);
+    } catch (error) {
+      console.error('Failed to get game screenshots:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle('screenshots:getFavorites', async () => {
+    try {
+      return screenshotService.getFavoriteScreenshots();
+    } catch (error) {
+      console.error('Failed to get favorite screenshots:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle('screenshots:toggleFavorite', async (_, screenshotId: string) => {
+    try {
+      screenshotService.toggleFavorite(screenshotId);
+      return { success: true };
+    } catch (error) {
+      console.error('Failed to toggle favorite:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle('screenshots:addTags', async (_, screenshotId: string, tags: string[]) => {
+    try {
+      screenshotService.addTags(screenshotId, tags);
+      return { success: true };
+    } catch (error) {
+      console.error('Failed to add tags:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle('screenshots:updateCaption', async (_, screenshotId: string, caption: string) => {
+    try {
+      screenshotService.updateCaption(screenshotId, caption);
+      return { success: true };
+    } catch (error) {
+      console.error('Failed to update caption:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle('screenshots:delete', async (_, screenshotId: string, deleteFile: boolean) => {
+    try {
+      await screenshotService.deleteScreenshot(screenshotId, deleteFile);
+      return { success: true };
+    } catch (error) {
+      console.error('Failed to delete screenshot:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle('screenshots:search', async (_, query: string) => {
+    try {
+      return screenshotService.searchScreenshots(query);
+    } catch (error) {
+      console.error('Failed to search screenshots:', error);
+      throw error;
+    }
+  });
+
+  // DLC Tracker IPC Handlers
+  ipcMain.handle('dlc:scan', async () => {
+    try {
+      return await dlcTrackerService.scanForDLCs();
+    } catch (error) {
+      console.error('Failed to scan for DLCs:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle('dlc:scanGame', async (_, gameId: string, platform: string, platformId: string) => {
+    try {
+      return await dlcTrackerService.scanGameDLCs(gameId, platform, platformId);
+    } catch (error) {
+      console.error('Failed to scan game DLCs:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle('dlc:getAll', async () => {
+    try {
+      return dlcTrackerService.getAllDLCs();
+    } catch (error) {
+      console.error('Failed to get all DLCs:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle('dlc:getGame', async (_, gameId: string) => {
+    try {
+      return dlcTrackerService.getGameDLCs(gameId);
+    } catch (error) {
+      console.error('Failed to get game DLCs:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle('dlc:getUnowned', async () => {
+    try {
+      return dlcTrackerService.getUnownedDLCs();
+    } catch (error) {
+      console.error('Failed to get unowned DLCs:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle('dlc:markOwned', async (_, dlcId: string) => {
+    try {
+      dlcTrackerService.markAsOwned(dlcId);
+      return { success: true };
+    } catch (error) {
+      console.error('Failed to mark DLC as owned:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle('dlc:markInstalled', async (_, dlcId: string) => {
+    try {
+      dlcTrackerService.markAsInstalled(dlcId);
+      return { success: true };
+    } catch (error) {
+      console.error('Failed to mark DLC as installed:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle('dlc:getStats', async () => {
+    try {
+      return dlcTrackerService.getDLCStats();
+    } catch (error) {
+      console.error('Failed to get DLC stats:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle('dlc:getRecent', async () => {
+    try {
+      return dlcTrackerService.getRecentDLCReleases();
+    } catch (error) {
+      console.error('Failed to get recent DLC releases:', error);
+      throw error;
+    }
+  });
+
+  // Wishlist & Price Tracker IPC Handlers
+  ipcMain.handle('wishlist:add', async (_, game: any) => {
+    try {
+      return priceTrackerService.addToWishlist(game);
+    } catch (error) {
+      console.error('Failed to add to wishlist:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle('wishlist:remove', async (_, wishlistGameId: string) => {
+    try {
+      priceTrackerService.removeFromWishlist(wishlistGameId);
+      return { success: true };
+    } catch (error) {
+      console.error('Failed to remove from wishlist:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle('wishlist:getAll', async () => {
+    try {
+      return priceTrackerService.getAllWishlistGames();
+    } catch (error) {
+      console.error('Failed to get wishlist games:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle('wishlist:getDiscounted', async () => {
+    try {
+      return priceTrackerService.getDiscountedGames();
+    } catch (error) {
+      console.error('Failed to get discounted games:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle('wishlist:setTargetPrice', async (_, wishlistGameId: string, targetPrice: number, enabled: boolean) => {
+    try {
+      priceTrackerService.setTargetPrice(wishlistGameId, targetPrice, enabled);
+      return { success: true };
+    } catch (error) {
+      console.error('Failed to set target price:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle('wishlist:checkPrices', async () => {
+    try {
+      return await priceTrackerService.checkPrices();
+    } catch (error) {
+      console.error('Failed to check prices:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle('wishlist:getAlerts', async () => {
+    try {
+      return priceTrackerService.getPriceAlerts(true);
+    } catch (error) {
+      console.error('Failed to get price alerts:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle('wishlist:dismissAlert', async (_, alertId: string) => {
+    try {
+      priceTrackerService.dismissAlert(alertId);
+      return { success: true };
+    } catch (error) {
+      console.error('Failed to dismiss alert:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle('wishlist:getStats', async () => {
+    try {
+      return priceTrackerService.getWishlistStats();
+    } catch (error) {
+      console.error('Failed to get wishlist stats:', error);
+      throw error;
+    }
+  });
+
+  // Supabase Cloud IPC Handlers
+  ipcMain.handle('cloud:signUp', async (_, email: string, password: string, username: string) => {
+    try {
+      return await supabaseService.signUp(email, password, username);
+    } catch (error) {
+      console.error('Failed to sign up:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle('cloud:signIn', async (_, email: string, password: string) => {
+    try {
+      return await supabaseService.signIn(email, password);
+    } catch (error) {
+      console.error('Failed to sign in:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle('cloud:signOut', async () => {
+    try {
+      return await supabaseService.signOut();
+    } catch (error) {
+      console.error('Failed to sign out:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle('cloud:getCurrentUser', async () => {
+    try {
+      return supabaseService.getCurrentUser();
+    } catch (error) {
+      console.error('Failed to get current user:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle('cloud:isAuthenticated', async () => {
+    try {
+      return supabaseService.isAuthenticated();
+    } catch (error) {
+      console.error('Failed to check authentication:', error);
+      return false;
+    }
+  });
+
+  ipcMain.handle('cloud:syncProfileToCloud', async () => {
+    try {
+      return await supabaseService.syncProfileToCloud();
+    } catch (error) {
+      console.error('Failed to sync profile to cloud:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle('cloud:syncProfileFromCloud', async () => {
+    try {
+      return await supabaseService.syncProfileFromCloud();
+    } catch (error) {
+      console.error('Failed to sync profile from cloud:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle('cloud:uploadSaveGame', async (_, gameId: string, gameName: string, platform: string, filePath: string) => {
+    try {
+      return await supabaseService.uploadSaveGame(gameId, gameName, platform, filePath);
+    } catch (error) {
+      console.error('Failed to upload save game:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle('cloud:downloadSaveGame', async (_, saveId: string, destinationPath: string) => {
+    try {
+      return await supabaseService.downloadSaveGame(saveId, destinationPath);
+    } catch (error) {
+      console.error('Failed to download save game:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle('cloud:getGameCloudSaves', async (_, gameId: string) => {
+    try {
+      return await supabaseService.getGameCloudSaves(gameId);
+    } catch (error) {
+      console.error('Failed to get game cloud saves:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle('cloud:uploadScreenshot', async (_, screenshot: any) => {
+    try {
+      return await supabaseService.uploadScreenshot(screenshot);
+    } catch (error) {
+      console.error('Failed to upload screenshot:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle('cloud:getMyScreenshots', async () => {
+    try {
+      return await supabaseService.getMyCloudScreenshots();
+    } catch (error) {
+      console.error('Failed to get my screenshots:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle('cloud:getPublicScreenshots', async (_, limit: number) => {
+    try {
+      return await supabaseService.getPublicScreenshots(limit);
+    } catch (error) {
+      console.error('Failed to get public screenshots:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle('cloud:likeScreenshot', async (_, screenshotId: string) => {
+    try {
+      return await supabaseService.likeScreenshot(screenshotId);
+    } catch (error) {
+      console.error('Failed to like screenshot:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle('cloud:syncAchievements', async () => {
+    try {
+      return await supabaseService.syncAchievementsToCloud();
+    } catch (error) {
+      console.error('Failed to sync achievements:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle('cloud:getStorageUsage', async () => {
+    try {
+      return await supabaseService.getStorageUsage();
+    } catch (error) {
+      console.error('Failed to get storage usage:', error);
+      throw error;
+    }
+  });
+
+  // ===== Gaming Session Handlers =====
+  ipcMain.handle('session:create', async (_, session: any) => {
+    try {
+      return gamingSessionService.createSession(session);
+    } catch (error) {
+      console.error('Failed to create session:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle('session:getAll', async () => {
+    try {
+      return gamingSessionService.getAllSessions();
+    } catch (error) {
+      console.error('Failed to get sessions:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle('session:getUpcoming', async (_, limit: number) => {
+    try {
+      return gamingSessionService.getUpcomingSessions(limit);
+    } catch (error) {
+      console.error('Failed to get upcoming sessions:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle('session:getForMonth', async (_, year: number, month: number) => {
+    try {
+      return gamingSessionService.getSessionsForMonth(year, month);
+    } catch (error) {
+      console.error('Failed to get sessions for month:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle('session:update', async (_, id: string, updates: any) => {
+    try {
+      return gamingSessionService.updateSession(id, updates);
+    } catch (error) {
+      console.error('Failed to update session:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle('session:delete', async (_, id: string) => {
+    try {
+      return gamingSessionService.deleteSession(id);
+    } catch (error) {
+      console.error('Failed to delete session:', error);
+      throw error;
+    }
+  });
+
+  // ===== Expense Tracker Handlers =====
+  ipcMain.handle('expenses:addPurchase', async (_, purchase: any) => {
+    try {
+      return expenseTrackerService.addPurchase(purchase);
+    } catch (error) {
+      console.error('Failed to add purchase:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle('expenses:getAll', async () => {
+    try {
+      return expenseTrackerService.getAllPurchases();
+    } catch (error) {
+      console.error('Failed to get purchases:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle('expenses:getStats', async (_, year?: number) => {
+    try {
+      return expenseTrackerService.getExpenseStats(year);
+    } catch (error) {
+      console.error('Failed to get expense stats:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle('expenses:delete', async (_, id: string) => {
+    try {
+      return expenseTrackerService.deletePurchase(id);
+    } catch (error) {
+      console.error('Failed to delete purchase:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle('expenses:importFromLibrary', async () => {
+    try {
+      return await expenseTrackerService.importFromLibrary();
+    } catch (error) {
+      console.error('Failed to import from library:', error);
+      throw error;
+    }
+  });
 
   // Fan Control IPC
   ipcMain.handle('fans:getData', async () => {
@@ -795,8 +1641,13 @@ app.whenReady().then(() => {
   ipcMain.handle('saves:getConfig', () => {
     return {
       configs: saveManagerService.getConfigs(),
-      cloudPath: saveManagerService.getCloudPath()
+      cloudPath: saveManagerService.getCloudPath(),
+      cloudSyncEnabled: saveManagerService.getCloudSyncEnabled()
     };
+  });
+
+  ipcMain.handle('saves:setCloudSyncEnabled', (_, enabled: boolean) => {
+    return saveManagerService.setCloudSyncEnabled(enabled);
   });
 
   ipcMain.handle('saves:setConfig', (_, cloudPath: string) => {

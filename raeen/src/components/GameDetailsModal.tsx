@@ -1,8 +1,9 @@
 import React from 'react';
-import { X, Play, Clock, Calendar, HardDrive, Tag, EyeOff, Eye, Heart, Terminal, Bookmark, Star, FileText, Download } from 'lucide-react';
+import { X, Play, Clock, Calendar, HardDrive, Tag, EyeOff, Eye, Heart, Terminal, Bookmark, Star, FileText, Download, Trophy } from 'lucide-react';
 import { Game } from '../types';
-import { getPlatformIcon } from '../data/LauncherData';
+import { getPlatformIcon } from '../utils/platformUtils';
 import { useGameStore } from '../stores/gameStore';
+import AchievementsList from './AchievementsList';
 
 interface GameDetailsModalProps {
     game: Game;
@@ -18,6 +19,8 @@ const GameDetailsModal: React.FC<GameDetailsModalProps> = ({ game, onClose, onPl
     const [showLaunchOptions, setShowLaunchOptions] = React.useState(false);
     const [notes, setNotes] = React.useState(game.userNotes || '');
     const [isSavingNotes, setIsSavingNotes] = React.useState(false);
+    const [showAchievements, setShowAchievements] = React.useState(false);
+    const [achievementStats, setAchievementStats] = React.useState<{ total: number; unlocked: number; percent: number } | null>(null);
 
     // Find other games in the same group (merged duplicates)
     const mergedGames = React.useMemo(() => {
@@ -33,6 +36,22 @@ const GameDetailsModal: React.FC<GameDetailsModalProps> = ({ game, onClose, onPl
         window.addEventListener('keydown', handleEsc);
         return () => window.removeEventListener('keydown', handleEsc);
     }, [onClose]);
+
+    // Load achievement stats
+    React.useEffect(() => {
+        const loadAchievementStats = async () => {
+            try {
+                const stats = await window.ipcRenderer.invoke('achievements:getGameStats', game.id);
+                if (stats.total > 0) {
+                    setAchievementStats(stats);
+                }
+            } catch (error) {
+                console.error('Failed to load achievement stats:', error);
+            }
+        };
+
+        loadAchievementStats();
+    }, [game.id]);
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
@@ -240,6 +259,50 @@ const GameDetailsModal: React.FC<GameDetailsModalProps> = ({ game, onClose, onPl
                                 </div>
                             </div>
 
+                            {/* Achievements Preview */}
+                            {achievementStats && achievementStats.total > 0 && (
+                                <div className="bg-white/5 rounded-xl p-5 border border-white/5">
+                                    <div className="flex items-center justify-between mb-4">
+                                        <h3 className="text-gray-400 text-xs font-bold uppercase tracking-wider flex items-center gap-2">
+                                            <Trophy size={14} className="text-yellow-500" />
+                                            Achievements
+                                        </h3>
+                                        <button
+                                            onClick={() => setShowAchievements(!showAchievements)}
+                                            className="text-xs text-blue-400 hover:text-blue-300 transition-colors"
+                                        >
+                                            {showAchievements ? 'Hide' : 'View All'}
+                                        </button>
+                                    </div>
+
+                                    <div className="space-y-3">
+                                        {/* Progress Bar */}
+                                        <div>
+                                            <div className="flex justify-between text-xs mb-2">
+                                                <span className="text-gray-400">Progress</span>
+                                                <span className="text-white font-semibold">{achievementStats.unlocked} / {achievementStats.total}</span>
+                                            </div>
+                                            <div className="h-2 bg-black/40 rounded-full overflow-hidden">
+                                                <div
+                                                    className="h-full bg-gradient-to-r from-blue-500 to-purple-600 transition-all duration-500"
+                                                    style={{ width: `${achievementStats.percent}%` }}
+                                                />
+                                            </div>
+                                        </div>
+
+                                        {/* Completion Percentage */}
+                                        <div className="flex items-center justify-center bg-black/40 rounded-lg p-3">
+                                            <div className="text-center">
+                                                <div className="text-3xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-500">
+                                                    {achievementStats.percent}%
+                                                </div>
+                                                <div className="text-xs text-gray-500 mt-1">Complete</div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
                             {/* Merged Games / Versions */}
                             {mergedGames.length > 0 && (
                                 <div>
@@ -408,6 +471,18 @@ const GameDetailsModal: React.FC<GameDetailsModalProps> = ({ game, onClose, onPl
 
                     </div>
                 </div>
+
+                {/* Achievements Full View Modal */}
+                {showAchievements && achievementStats && achievementStats.total > 0 && (
+                    <div className="absolute inset-0 bg-[#0f172a] z-10 p-6 overflow-hidden flex flex-col">
+                        <AchievementsList
+                            gameId={game.id}
+                            gameName={game.title}
+                            platform={game.platform}
+                            platformId={game.platformId}
+                        />
+                    </div>
+                )}
             </div>
         </div>
     );

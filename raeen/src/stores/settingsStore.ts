@@ -40,6 +40,10 @@ export interface UserSettings {
         showOverlay: boolean;
         targetFps?: number;
     };
+    gaming: {
+        preGameHealthCheck: boolean;
+        autoCloseBackgroundApps: boolean;
+    };
 }
 
 interface SettingsState {

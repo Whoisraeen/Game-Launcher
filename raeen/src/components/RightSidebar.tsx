@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { MoreHorizontal, Plus, MessageCircle, Radio, Gauge, Sliders, Trophy, Cpu, Activity, Zap, Users, RefreshCw, PlayCircle } from 'lucide-react';
-import { getPlatformName } from '../data/LauncherData';
+import { getPlatformName } from '../utils/platformUtils';
 import { useGameStore } from '../stores/gameStore';
 import { SystemStats, Friend, RecentAchievement } from '../types';
 import FriendChat from './FriendChat';

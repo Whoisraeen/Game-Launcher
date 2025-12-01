@@ -5,6 +5,7 @@ import fs from 'fs';
 import path from 'path';
 import axios from 'axios';
 import { SettingsManager } from './settingsManager';
+import { NotificationService } from './notificationService';
 
 export interface Friend {
     id: string;
@@ -18,11 +19,29 @@ export interface Friend {
 
 export class FriendsManager {
     private simulationInterval: NodeJS.Timeout | null = null;
+    private notificationService?: NotificationService;
+    private previousFriendStates: Map<string, { status: string; activity: string | null }> = new Map();
 
-    constructor() {
+    constructor(notificationService?: NotificationService) {
+        this.notificationService = notificationService;
         this.seedInitialData();
+        this.loadPreviousStates();
         // Start simulation if in dev mode or just to keep things lively for the demo
-        this.startSimulation();
+        // Disabled for production readiness to avoid mock notifications
+        // this.startSimulation();
+    }
+
+    /**
+     * Load previous friend states for comparison
+     */
+    private loadPreviousStates() {
+        const friends = this.getAll();
+        friends.forEach(friend => {
+            this.previousFriendStates.set(friend.id, {
+                status: friend.status,
+                activity: friend.activity || null,
+            });
+        });
     }
 
     private seedInitialData() {
@@ -115,35 +134,75 @@ export class FriendsManager {
         const db = getDb();
         // Get all friends directly from DB to ensure we have the latest
         const rows = db.prepare('SELECT * FROM friends').all();
-        
+
         const statuses = ['online', 'offline', 'playing', 'away', 'busy'];
         const activities = ['Halo Infinite', 'Elden Ring', 'Cyberpunk 2077', 'Valorant', 'Minecraft', 'Spotify', 'Visual Studio Code', 'Apex Legends', 'Fortnite', 'Call of Duty'];
-        
+
         let changed = false;
 
         rows.forEach((friend: any) => {
             // 10% chance to change status per tick
             if (Math.random() > 0.9) {
+                const previousState = this.previousFriendStates.get(friend.id);
                 const newStatus = statuses[Math.floor(Math.random() * statuses.length)];
                 let newActivity = null;
-                
+
                 if (newStatus === 'playing') {
                     newActivity = activities[Math.floor(Math.random() * activities.length)];
                 } else if (newStatus === 'online') {
                      // Small chance to be "Just chatting" or similar
                      newActivity = Math.random() > 0.8 ? 'Browsing Store' : null;
                 }
-                
+
                 db.prepare('UPDATE friends SET status = ?, activity = ?, last_seen = ? WHERE id = ?')
                   .run(newStatus, newActivity, new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}), friend.id);
                 changed = true;
+
+                // Trigger notifications for status changes
+                if (this.notificationService && previousState) {
+                    // Friend came online (from offline)
+                    if (previousState.status === 'offline' && (newStatus === 'online' || newStatus === 'playing')) {
+                        this.notificationService.notifyFriendOnline(friend.username, friend.platform || 'Unknown');
+                    }
+
+                    // Friend started playing a game
+                    if (newStatus === 'playing' && newActivity && previousState.activity !== newActivity) {
+                        this.notificationService.notifyFriendPlaying(friend.username, newActivity);
+                    }
+                }
+
+                // Update previous state
+                this.previousFriendStates.set(friend.id, {
+                    status: newStatus,
+                    activity: newActivity,
+                });
+            }
+
+            // Simulate incoming message (1% chance if online/playing)
+            if ((friend.status === 'online' || friend.status === 'playing') && Math.random() > 0.99) {
+                const messages = [
+                    "Hey, want to play?",
+                    "Check out this new game!",
+                    "I'm stuck on this level...",
+                    "LOL did you see that?",
+                    "Coming online in 5 mins",
+                    "GG last night!",
+                    "Are you getting the new DLC?",
+                    "Wait for me!"
+                ];
+                const content = messages[Math.floor(Math.random() * messages.length)];
+                this.sendMessage(friend.id, content, friend.username);
+                
+                if (this.notificationService) {
+                    this.notificationService.notify(friend.username, content);
+                }
             }
         });
-        
+
         if (changed) {
             this.broadcastUpdate();
         }
-        
+
         return this.getAll();
     }
 
@@ -334,5 +393,39 @@ export class FriendsManager {
 
         // Deduplicate
         return [...new Set(friends)];
+    }
+
+    // Chat functionality
+    
+    getMessages(friendId: string): any[] {
+        const db = getDb();
+        return db.prepare('SELECT * FROM friend_messages WHERE friend_id = ? ORDER BY timestamp ASC').all(friendId);
+    }
+
+    sendMessage(friendId: string, content: string, sender: string = 'me') {
+        const db = getDb();
+        const id = uuidv4();
+        const timestamp = Date.now();
+        
+        db.prepare(`
+            INSERT INTO friend_messages (id, friend_id, sender, content, timestamp, is_read)
+            VALUES (?, ?, ?, ?, ?, ?)
+        `).run(id, friendId, sender, content, timestamp, sender === 'me' ? 1 : 0);
+
+        // Notify renderer
+        BrowserWindow.getAllWindows().forEach(win => {
+            win.webContents.send('friends:message', { 
+                friendId, 
+                message: { id, friend_id: friendId, sender, content, timestamp, is_read: sender === 'me' ? 1 : 0 } 
+            });
+        });
+
+        return { id, friend_id: friendId, sender, content, timestamp, is_read: sender === 'me' ? 1 : 0 };
+    }
+
+    markRead(friendId: string) {
+        const db = getDb();
+        db.prepare('UPDATE friend_messages SET is_read = 1 WHERE friend_id = ?').run(friendId);
+        return true;
     }
 }

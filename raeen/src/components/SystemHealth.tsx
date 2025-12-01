@@ -47,8 +47,8 @@ const SystemHealth: React.FC = () => {
         return () => clearInterval(interval);
     }, []);
 
-    // Mock temperature calculation based on load (since real temp requires admin/complex access)
-    const getTemp = (load: number) => Math.floor(30 + (load / 2));
+    // Use real temp if available, otherwise 0 (don't mock)
+    const getTemp = (metric: any) => metric?.temp || 0;
 
     return (
         <div className="bg-black/20 rounded-xl p-4 border border-white/5 backdrop-blur-md shadow-inner">
@@ -62,7 +62,7 @@ const SystemHealth: React.FC = () => {
                     icon={<Cpu size={14} className="text-blue-400" />}
                     label="CPU" 
                     value={current.cpu} 
-                    temp={getTemp(current.cpu)}
+                    temp={getTemp(current.cpu)} // Note: stats.cpu doesn't currently map temp in the simplified object, need to ensure backend sends it
                     data={data} 
                     dataKey="cpu" 
                     color="#60a5fa" 
@@ -71,7 +71,7 @@ const SystemHealth: React.FC = () => {
                     icon={<CircuitBoard size={14} className="text-green-400" />}
                     label="GPU" 
                     value={current.gpu} 
-                    temp={getTemp(current.gpu)}
+                    temp={0} // GPU temp often requires specific native libs or elevation
                     data={data} 
                     dataKey="gpu" 
                     color="#4ade80" 

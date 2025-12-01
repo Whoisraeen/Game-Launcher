@@ -12,6 +12,8 @@ import { usePerformanceStore } from './stores/performanceStore';
 import ThemeController from './components/ThemeController';
 import GamepadMapper from './components/GamepadMapper';
 import SystemStatus from './components/SystemStatus';
+import UpdatesWidget from './components/UpdatesWidget';
+import CloudSyncWidget from './components/CloudSyncWidget';
 
 // Pages
 import Library from './components/pages/Library';
@@ -30,6 +32,9 @@ import SaveManager from './components/pages/SaveManager';
 import Studio from './components/pages/Studio';
 import HardwareLab from './components/pages/HardwareLab';
 import Troubleshooter from './components/tools/Troubleshooter';
+import Achievements from './components/pages/Achievements';
+import Screenshots from './components/pages/Screenshots';
+import DLCManager from './components/pages/DLCManager';
 
 
 
@@ -76,7 +81,10 @@ function App() {
       case 'SmartDashboard': return <SmartDashboard />;
       case 'News': return <News />;
       case 'Analytics': return <Analytics />;
+      case 'Achievements': return <Achievements />;
       case 'Mods': return <Mods />;
+      case 'Screenshots': return <Screenshots />;
+      case 'DLCManager': return <DLCManager />;
       case 'SaveManager': return <SaveManager />;
       case 'Studio': return <Studio />;
       case 'HardwareLab': return <HardwareLab />;
@@ -148,6 +156,8 @@ function App() {
             <RightSidebar />
           </div>
           <Overlay />
+          <UpdatesWidget />
+          <CloudSyncWidget />
         </div>
       )}
     </NavigationProvider>
