@@ -21,17 +21,15 @@ export class DatabaseWorkerClient {
         // In production, the worker file location might be different
         // We might need to adjust this path based on build structure
         // Fix for dev mode where we might be running from different context
-        let workerPath = path.join(__dirname, '../workers/dbWorker.js'); 
+        
+        // In Vite Dev Mode:
+        // __dirname points to `dist-electron` (because main.ts is compiled there)
+        // The worker is compiled to `dist-electron/dbWorker.js` (based on vite.config.ts)
+        
+        let workerPath = path.join(__dirname, 'dbWorker.js'); 
         
         if (!app.isPackaged) {
-            // If we are in dev mode, we might need to point to a different location if using Vite/Webpack
-            // Or if running with tsx/ts-node directly.
-            // However, Electron main process usually runs from dist-electron/main.js
-            // So ../workers/dbWorker.js implies dist-electron/workers/dbWorker.js exists.
-            // We need to ensure the build process copies/compiles the worker.
-            // If not, we might fail.
-            
-            // Fallback for potential dev path if dist structure varies
+            // In dev, if it fails, check if we need relative path
             // console.log('Worker path:', workerPath);
         }
         
