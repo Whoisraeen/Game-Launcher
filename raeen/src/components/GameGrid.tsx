@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { Play, Search, Filter, Heart, LayoutGrid, List as ListIcon, Dices, Layers3 } from 'lucide-react';
+import { Play, Search, Filter, Heart, LayoutGrid, List as ListIcon, Dices, Layers3, ArrowUp, ArrowDown } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   DndContext,
@@ -34,7 +34,7 @@ import HealthCheckModal from './HealthCheckModal';
 import { useLaunchGame } from '../hooks/useLaunchGame';
 
 const GameGrid: React.FC = () => {
-    const { games, collections, selectedCollectionId, setSelectedCollectionId, loadGames, toggleFavorite, reorderGames, mergeGames, isLoading } = useGameStore();
+    const { games, collections, selectedCollectionId, setSelectedCollectionId, loadGames, loadCollections, toggleFavorite, reorderGames, saveGameOrder, mergeGames, isLoading } = useGameStore();
     const { setDynamicAccentColor, selectedGame, setSelectedGame } = useUIStore(); // UI Store
     const { initiateLaunch, continueLaunch, closeHealthCheck, launchState } = useLaunchGame();
     const [activeTab, setActiveTab] = useState('ALL GAMES');
@@ -60,8 +60,8 @@ const GameGrid: React.FC = () => {
     const [viewMode, setViewMode] = useState<'grid' | 'list' | 'coverFlow'>('grid');
     const [searchQuery, setSearchQuery] = useState('');
     // const [selectedGame, setSelectedGame] = useState<Game | null>(null); // Moved to UI Store
-    const [sortBy] = useState<'title' | 'playtime' | 'lastPlayed' | 'rating' | 'addedAt'>('title');
-    const [sortDirection] = useState<'asc' | 'desc'>('asc');
+    const [sortBy, setSortBy] = useState<'title' | 'playtime' | 'lastPlayed' | 'rating' | 'addedAt' | 'manual'>('title');
+    const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
     const [showFilterPanel, setShowFilterPanel] = useState(false);
     const [contextMenu, setContextMenu] = useState<{ x: number; y: number; game: Game } | null>(null);
     const [editingGame, setEditingGame] = useState<Game | null>(null);
@@ -82,7 +82,8 @@ const GameGrid: React.FC = () => {
 
     useEffect(() => {
         loadGames();
-    }, [loadGames]);
+        loadCollections();
+    }, [loadGames, loadCollections]);
 
     // Initialize Fuse.js for fuzzy search
     const fuse = useMemo(() => new Fuse(games, {
@@ -166,6 +167,10 @@ const GameGrid: React.FC = () => {
         result = groupedGames;
 
         // 7. Sorting
+        if (sortBy === 'manual') {
+            return result;
+        }
+
         return [...result].sort((a, b) => {
             let valA: any = a[sortBy];
             let valB: any = b[sortBy];
@@ -211,6 +216,7 @@ const GameGrid: React.FC = () => {
         const { active, over } = event;
         if (active.id !== over?.id && over) {
             reorderGames(active.id as string, over.id as string);
+            saveGameOrder();
         }
     };
 
@@ -271,10 +277,26 @@ const GameGrid: React.FC = () => {
             {showFilterPanel && (
                 <div className="px-8 pb-6 animate-in slide-in-from-top-2 fade-in duration-200">
                     <div className="bg-black/40 backdrop-blur-md border border-white/10 rounded-2xl p-4 flex flex-wrap gap-4">
-                        {/* Add filter controls here if needed */}
                         <div className="flex items-center gap-2">
                             <span className="text-sm text-gray-400">Sort by:</span>
-                            {/* Sort controls */}
+                            <select 
+                                value={sortBy} 
+                                onChange={(e) => setSortBy(e.target.value as any)}
+                                className="bg-black/20 border border-white/10 rounded-lg px-3 py-1 text-sm text-white focus:outline-none"
+                            >
+                                <option value="title">Title</option>
+                                <option value="playtime">Playtime</option>
+                                <option value="lastPlayed">Last Played</option>
+                                <option value="addedAt">Date Added</option>
+                                <option value="rating">Rating</option>
+                                <option value="manual">Custom Order</option>
+                            </select>
+                            <button 
+                                onClick={() => setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc')}
+                                className="p-1.5 rounded-lg bg-black/20 border border-white/10 text-gray-400 hover:text-white"
+                            >
+                                {sortDirection === 'asc' ? <ArrowUp size={16} /> : <ArrowDown size={16} />}
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -340,6 +362,7 @@ const GameGrid: React.FC = () => {
                                                 onContextMenu={handleContextMenu}
                                                 toggleFavorite={toggleFavorite}
                                                 launchGame={initiateLaunch}
+                                                disabled={sortBy !== 'manual'}
                                             />
                                         </motion.div>
                                     ))}
@@ -500,7 +523,7 @@ const Chip = ({ label, active = false, onClick }: { label: string, active?: bool
     </button>
 );
 
-const SortableGameCard = ({ game, onClick, onContextMenu, toggleFavorite, launchGame }: any) => {
+const SortableGameCard = ({ game, onClick, onContextMenu, toggleFavorite, launchGame, disabled }: any) => {
     const {
         attributes,
         listeners,
@@ -508,7 +531,7 @@ const SortableGameCard = ({ game, onClick, onContextMenu, toggleFavorite, launch
         transform,
         transition,
         isDragging
-    } = useSortable({ id: game.id });
+    } = useSortable({ id: game.id, disabled });
 
     const style = {
         transform: CSS.Transform.toString(transform),

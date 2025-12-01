@@ -190,13 +190,20 @@ export const useGameStore = create<GameState>((set, get) => ({
                 group_id: g.group_id
             }));
 
-            set(state => ({
-                games: reset ? mappedGames : [...state.games, ...mappedGames],
-                isLoading: false,
-                totalGames: total,
-                hasMore: (reset ? mappedGames.length : state.games.length + mappedGames.length) < total,
-                page: (reset ? 1 : state.page) + 1
-            }));
+            set(state => {
+                const newGames = reset ? mappedGames : [...state.games, ...mappedGames];
+                
+                // De-duplicate by ID just in case backend sends duplicates across pages or reset race condition
+                const uniqueGames = Array.from(new Map(newGames.map(item => [item.id, item])).values());
+
+                return {
+                    games: uniqueGames,
+                    isLoading: false,
+                    totalGames: total,
+                    hasMore: (reset ? mappedGames.length : state.games.length + mappedGames.length) < total,
+                    page: (reset ? 1 : state.page) + 1
+                };
+            });
         } catch (error) {
             set({ error: (error as Error).message, isLoading: false });
         }
@@ -498,7 +505,13 @@ export const useGameStore = create<GameState>((set, get) => ({
     importSteamFriends: async () => {
         try {
             const result = await window.ipcRenderer.invoke('friends:importSteam');
-            set({ friends: Array.isArray(result) ? result : [] });
+            // If import is successful, reload friends
+            if (Array.isArray(result) && result.length > 0) {
+                 await get().loadFriends();
+            } else {
+                // Just reload anyway to be safe
+                 await get().loadFriends();
+            }
         } catch (error) {
             console.error('Failed to import Steam friends:', error);
         }

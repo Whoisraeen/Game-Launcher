@@ -44,7 +44,11 @@ const RightSidebar: React.FC = () => {
     useEffect(() => {
         const fetchStats = async () => {
             try {
-                const data = await window.ipcRenderer.invoke('system:stats');
+                // Fixed: Correct IPC channel name based on main.ts/SystemController
+                // Previous error: 'system:stats' not found
+                // SystemController usually registers handlers or they are in main.ts
+                // Checking main.ts previously showed 'system:getStats'
+                const data = await window.ipcRenderer.invoke('system:getStats');
                 setStats(data);
             } catch (e) {
                 console.error("Failed to fetch system stats", e);

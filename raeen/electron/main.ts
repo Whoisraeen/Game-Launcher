@@ -9,6 +9,7 @@ import { initDatabase } from './database';
 // Controllers
 import { GameController } from './controllers/GameController';
 import { SystemController } from './controllers/SystemController';
+import { FriendsController } from './controllers/FriendsController';
 
 // Services
 import { GameManager } from './services/gameManager';
@@ -74,6 +75,7 @@ let storeService: StoreService;
 // Controllers Instances
 let gameController: GameController;
 let systemController: SystemController;
+let friendsController: FriendsController;
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -160,9 +162,10 @@ app.whenReady().then(async () => {
 
     // Initialize Managers/Services
     settingsManager = new SettingsManager();
+    notificationService = new NotificationService(); // Initialize early
     gameManager = new GameManager();
     hardwareMonitor = new HardwareMonitor();
-    friendsManager = new FriendsManager();
+    friendsManager = new FriendsManager(notificationService);
     universalModManager = new UniversalModManager();
     newsManager = new NewsManager();
     recommendationManager = new RecommendationManager();
@@ -175,7 +178,7 @@ app.whenReady().then(async () => {
     fanControlService = new FanControlService();
     hltbService = new HLTBService();
     performanceService = new PerformanceService();
-    notificationService = new NotificationService();
+    // notificationService initialized above
     achievementService = new AchievementService();
     healthCheckService = new HealthCheckService();
     crashAnalyzerService = new CrashAnalyzerService();
@@ -193,6 +196,7 @@ app.whenReady().then(async () => {
     gameController = new GameController(gameManager);
     // Pass the existing performanceService instance to SystemController
     systemController = new SystemController(performanceService);
+    friendsController = new FriendsController(friendsManager);
 
     // --- IPC Handlers Registration ---
     
@@ -298,22 +302,22 @@ app.whenReady().then(async () => {
       return await hardwareMonitor.getProcessList();
     });
 
-    // Friends IPC Handlers
-    ipcMain.handle('friends:getAll', () => {
-      return friendsManager.getAllFriends();
-    });
+    // Friends IPC Handlers (Handled by FriendsController now)
+    // ipcMain.handle('friends:getAll', () => {
+    //   return friendsManager.getAllFriends();
+    // });
 
-    ipcMain.handle('friends:add', (_, friend: any) => {
-      return friendsManager.addFriend(friend);
-    });
+    // ipcMain.handle('friends:add', (_, friend: any) => {
+    //   return friendsManager.addFriend(friend);
+    // });
 
-    ipcMain.handle('friends:remove', (_, id: string) => {
-      return friendsManager.removeFriend(id);
-    });
+    // ipcMain.handle('friends:remove', (_, id: string) => {
+    //   return friendsManager.removeFriend(id);
+    // });
 
-    ipcMain.handle('friends:updateStatus', (_, id: string, status: string) => {
-      return friendsManager.updateFriendStatus(id, status);
-    });
+    // ipcMain.handle('friends:updateStatus', (_, id: string, status: string) => {
+    //   return friendsManager.updateFriendStatus(id, status);
+    // });
 
     // Mod Manager IPC Handlers
     ipcMain.handle('mods:scan', async (_, gameId: string) => {
