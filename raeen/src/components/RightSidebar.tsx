@@ -5,15 +5,25 @@ import { useGameStore } from '../stores/gameStore';
 import { SystemStats, Friend, RecentAchievement } from '../types';
 import FriendChat from './FriendChat';
 
+import { Skeleton } from './Skeleton';
+
 const RightSidebar: React.FC = () => {
     const { friends, achievements, games, loadFriends, loadAchievements, importSteamFriends, openExternal } = useGameStore();
     const [stats, setStats] = useState<SystemStats | null>(null);
     const [showFriendsMenu, setShowFriendsMenu] = useState(false);
     const [activeChatFriend, setActiveChatFriend] = useState<Friend | null>(null);
+    const [isLoadingFriends, setIsLoadingFriends] = useState(true);
 
     useEffect(() => {
-        loadFriends();
-        loadAchievements();
+        const init = async () => {
+            try {
+                await Promise.all([loadFriends(), loadAchievements()]);
+            } finally {
+                setIsLoadingFriends(false);
+            }
+        };
+        
+        init();
         // Try to import automatically once on load
         importSteamFriends();
  
@@ -79,21 +89,51 @@ const RightSidebar: React.FC = () => {
                     >
                         <div className="flex justify-between items-center text-xs text-gray-400 mb-2 px-1">
                             <span>Cross-platform list</span>
-                            <Plus size={14} className="cursor-pointer hover:text-white" />
+                            <Plus 
+                                size={14} 
+                                className="cursor-pointer hover:text-white transition-colors" 
+                                onClick={() => setShowFriendsMenu(!showFriendsMenu)}
+                            />
                         </div>
 
                         <div className="space-y-3">
-                            {friends.map((friend: Friend) => {
-                                const isJoinable = !!(friend.status === 'playing' && friend.activity && games.find(g => g.title === friend.activity && g.status === 'installed'));
-                                return (
-                                    <FriendItem
-                                        key={friend.id}
-                                        friend={friend}
-                                        isJoinable={isJoinable}
-                                        onChat={() => setActiveChatFriend(friend)}
-                                    />
-                                );
-                            })}
+                            {isLoadingFriends ? (
+                                <>
+                                    {[1, 2, 3].map(i => (
+                                        <div key={i} className="flex items-center gap-3 p-2">
+                                            <Skeleton className="w-9 h-9 rounded-full" />
+                                            <div className="flex-1 space-y-2">
+                                                <Skeleton className="h-3 w-20" />
+                                                <Skeleton className="h-2 w-12" />
+                                            </div>
+                                        </div>
+                                    ))}
+                                </>
+                            ) : friends.length === 0 ? (
+                                <div className="text-center py-6 px-4 bg-white/5 rounded-lg border border-white/5 border-dashed">
+                                    <Users className="w-8 h-8 text-gray-600 mx-auto mb-2" />
+                                    <p className="text-xs text-gray-400 font-medium">No friends found</p>
+                                    <p className="text-[10px] text-gray-500 mb-3">Connect platforms to find friends</p>
+                                    <button 
+                                        onClick={importSteamFriends}
+                                        className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-xs rounded-md transition-colors font-bold"
+                                    >
+                                        Import Steam
+                                    </button>
+                                </div>
+                            ) : (
+                                friends.map((friend: Friend) => {
+                                    const isJoinable = !!(friend.status === 'playing' && friend.activity && games.find(g => g.title === friend.activity && g.status === 'installed'));
+                                    return (
+                                        <FriendItem
+                                            key={friend.id}
+                                            friend={friend}
+                                            isJoinable={isJoinable}
+                                            onChat={() => setActiveChatFriend(friend)}
+                                        />
+                                    );
+                                })
+                            )}
                         </div>
                     </Section>
 

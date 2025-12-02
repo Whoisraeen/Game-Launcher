@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Monitor, User, Shield, Keyboard, Bell, Volume2, Database, RefreshCw, FolderOpen, Link, Zap } from 'lucide-react';
+import { Monitor, User, Shield, Keyboard, Bell, Volume2, Database, RefreshCw, FolderOpen, Link, Zap, Palette, Upload, Image as ImageIcon } from 'lucide-react';
 import { useSettingsStore, UserSettings } from '../../stores/settingsStore';
 import { useGameStore } from '../../stores/gameStore';
 
@@ -43,9 +43,20 @@ const Settings: React.FC = () => {
         updateSetting(category, { [key]: value });
     };
 
-    const handleSelect = (category: keyof UserSettings, key: string, value: string) => {
+    const handleSelect = (category: keyof UserSettings, key: string, value: string | number) => {
         // @ts-ignore - Dynamic key access
         updateSetting(category, { [key]: value });
+    };
+
+    const handleUploadBackground = async () => {
+        try {
+            const path = await window.ipcRenderer.invoke('settings:uploadBackground');
+            if (path) {
+                updateSetting('appearance', { customBackground: path });
+            }
+        } catch (error) {
+            console.error('Failed to upload background', error);
+        }
     };
 
     const handleScanFolder = async () => {
@@ -54,11 +65,15 @@ const Settings: React.FC = () => {
             if (!path) return;
 
             setIsScanning(true);
-            const foundGames = await window.ipcRenderer.invoke('manual:scan', path);
+            const foundGames = await window.ipcRenderer.invoke('manual:scanDirectory', path);
 
             let importedCount = 0;
             for (const game of foundGames) {
-                await window.ipcRenderer.invoke('manual:add', game.title, game.installPath, game.executable);
+                await window.ipcRenderer.invoke('manual:addGame', {
+                    title: game.title,
+                    installPath: game.installPath,
+                    executable: game.executable
+                });
                 importedCount++;
             }
 
@@ -85,6 +100,12 @@ const Settings: React.FC = () => {
                     label="General"
                     active={activeSection === 'General'}
                     onClick={() => setActiveSection('General')}
+                />
+                <SettingsNav
+                    icon={<Palette size={18} />}
+                    label="Appearance"
+                    active={activeSection === 'Appearance'}
+                    onClick={() => setActiveSection('Appearance')}
                 />
                 <SettingsNav
                     icon={<Zap size={18} />}
@@ -172,32 +193,161 @@ const Settings: React.FC = () => {
                                     onChange={(v) => handleToggle('general', 'autoDetectGames', v)}
                                 />
                             </SettingGroup>
+                        </div>
+                    </div>
+                )}
 
-                            <SettingGroup title="Appearance">
-                                <div className="flex items-center justify-between py-2">
-                                    <span className="text-sm text-gray-300">Theme</span>
-                                    <select
-                                        className="bg-black/20 border border-white/10 rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none"
-                                        value={settings.appearance.theme}
-                                        onChange={(e) => handleSelect('appearance', 'theme', e.target.value)}
-                                    >
-                                        <option value="dark">Dark (Default)</option>
-                                        <option value="light">Light</option>
-                                        <option value="cyberpunk">Cyberpunk</option>
-                                        <option value="midnight">Midnight</option>
-                                        <option value="dynamic">Dynamic (Adapts to Game Art)</option>
-                                    </select>
+                {activeSection === 'Appearance' && (
+                    <div>
+                        <h2 className="text-2xl font-bold text-white mb-6">Appearance & Theming</h2>
+                        <div className="space-y-8">
+                            <SettingGroup title="Theme Presets">
+                                <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                                    {['dark', 'light', 'cyberpunk', 'midnight'].map((theme) => (
+                                        <button
+                                            key={theme}
+                                            onClick={() => handleSelect('appearance', 'theme', theme)}
+                                            className={`
+                                                p-4 rounded-xl border transition-all relative overflow-hidden group
+                                                ${settings.appearance.theme === theme 
+                                                    ? 'border-blue-500 bg-blue-500/10' 
+                                                    : 'border-white/10 bg-black/20 hover:border-white/30'}
+                                            `}
+                                        >
+                                            <div className={`w-full h-16 rounded-lg mb-3 ${
+                                                theme === 'light' ? 'bg-gray-200' : 
+                                                theme === 'cyberpunk' ? 'bg-gradient-to-br from-yellow-400 to-purple-600' :
+                                                theme === 'midnight' ? 'bg-gradient-to-br from-blue-900 to-black' :
+                                                'bg-slate-900'
+                                            }`}></div>
+                                            <span className="capitalize font-medium text-sm text-white">{theme}</span>
+                                            {settings.appearance.theme === theme && (
+                                                <div className="absolute top-2 right-2 w-2 h-2 rounded-full bg-blue-500 shadow-[0_0_10px_rgba(59,130,246,0.8)]"></div>
+                                            )}
+                                        </button>
+                                    ))}
                                 </div>
-                                <Toggle
-                                    label="Enable transparency effects"
-                                    checked={settings.appearance.enableTransparency}
-                                    onChange={(v) => handleToggle('appearance', 'enableTransparency', v)}
-                                />
-                                <Toggle
-                                    label="Show animated backgrounds"
-                                    checked={settings.appearance.animatedBackgrounds}
-                                    onChange={(v) => handleToggle('appearance', 'animatedBackgrounds', v)}
-                                />
+                            </SettingGroup>
+
+                            <SettingGroup title="Custom Background">
+                                <div className="bg-black/20 border border-white/10 rounded-xl p-6 flex flex-col items-center gap-4">
+                                    {settings.appearance.customBackground ? (
+                                        <div className="relative w-full aspect-video rounded-lg overflow-hidden group">
+                                            <img 
+                                                src={settings.appearance.customBackground} 
+                                                alt="Custom Background" 
+                                                className="w-full h-full object-cover"
+                                            />
+                                            <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-4">
+                                                <button 
+                                                    onClick={handleUploadBackground}
+                                                    className="flex items-center gap-2 px-4 py-2 bg-white/10 hover:bg-white/20 rounded-lg text-white text-sm font-bold transition-colors backdrop-blur-md"
+                                                >
+                                                    <RefreshCw size={16} /> Change
+                                                </button>
+                                                <button 
+                                                    onClick={() => handleSelect('appearance', 'customBackground', '')}
+                                                    className="flex items-center gap-2 px-4 py-2 bg-red-500/20 hover:bg-red-500/30 text-red-400 hover:text-red-300 rounded-lg text-sm font-bold transition-colors backdrop-blur-md"
+                                                >
+                                                    Remove
+                                                </button>
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <div className="flex flex-col items-center gap-2 text-center py-8">
+                                            <div className="w-16 h-16 rounded-full bg-white/5 flex items-center justify-center mb-2">
+                                                <ImageIcon size={32} className="text-gray-500" />
+                                            </div>
+                                            <h4 className="text-white font-medium">No Custom Background</h4>
+                                            <p className="text-sm text-gray-400 max-w-xs">Upload an image to use as your global wallpaper. Recommended size: 1920x1080 or higher.</p>
+                                            <button 
+                                                onClick={handleUploadBackground}
+                                                className="mt-4 flex items-center gap-2 px-6 py-3 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-bold transition-all hover:scale-105 shadow-lg shadow-blue-600/20"
+                                            >
+                                                <Upload size={18} /> Upload Image
+                                            </button>
+                                        </div>
+                                    )}
+                                </div>
+                            </SettingGroup>
+
+                            <SettingGroup title="Visual Effects">
+                                <div className="space-y-6">
+                                    <div>
+                                        <div className="flex justify-between text-sm mb-2">
+                                            <span className="text-gray-300">Background Blur</span>
+                                            <span className="text-gray-400 capitalize">{settings.appearance.blurLevel || 'medium'}</span>
+                                        </div>
+                                        <div className="grid grid-cols-3 gap-2">
+                                            {['low', 'medium', 'high'].map((level) => (
+                                                <button
+                                                    key={level}
+                                                    onClick={() => handleSelect('appearance', 'blurLevel', level)}
+                                                    className={`
+                                                        py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-colors
+                                                        ${settings.appearance.blurLevel === level 
+                                                            ? 'bg-white text-black' 
+                                                            : 'bg-white/5 text-gray-400 hover:bg-white/10'}
+                                                    `}
+                                                >
+                                                    {level}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+
+                                    <div>
+                                        <div className="flex justify-between text-sm mb-2">
+                                            <span className="text-gray-300">Overlay Opacity</span>
+                                            <span className="text-gray-400">{Math.round((settings.appearance.overlayOpacity || 0.6) * 100)}%</span>
+                                        </div>
+                                        <input 
+                                            type="range" 
+                                            min="0" 
+                                            max="1" 
+                                            step="0.05"
+                                            value={settings.appearance.overlayOpacity || 0.6}
+                                            onChange={(e) => handleSelect('appearance', 'overlayOpacity', parseFloat(e.target.value))}
+                                            className="w-full accent-blue-500 h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer"
+                                        />
+                                    </div>
+
+                                    <div>
+                                        <div className="flex justify-between text-sm mb-2">
+                                            <span className="text-gray-300">Accent Color</span>
+                                            <span className="text-gray-400">{settings.appearance.accentColor}</span>
+                                        </div>
+                                        <div className="flex items-center gap-3">
+                                            <input 
+                                                type="color" 
+                                                value={settings.appearance.accentColor || '#4f46e5'}
+                                                onChange={(e) => handleSelect('appearance', 'accentColor', e.target.value)}
+                                                className="w-10 h-10 rounded-lg border-0 p-0 cursor-pointer bg-transparent"
+                                            />
+                                            <div className="flex-1 flex gap-2 overflow-x-auto py-1 custom-scrollbar">
+                                                {['#4f46e5', '#ef4444', '#22c55e', '#eab308', '#a855f7', '#ec4899', '#06b6d4'].map(color => (
+                                                    <button
+                                                        key={color}
+                                                        onClick={() => handleSelect('appearance', 'accentColor', color)}
+                                                        className="w-8 h-8 rounded-full border-2 border-transparent hover:scale-110 transition-transform"
+                                                        style={{ backgroundColor: color, borderColor: settings.appearance.accentColor === color ? 'white' : 'transparent' }}
+                                                    />
+                                                ))}
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <Toggle
+                                        label="Enable transparency effects"
+                                        checked={settings.appearance.enableTransparency}
+                                        onChange={(v) => handleToggle('appearance', 'enableTransparency', v)}
+                                    />
+                                    <Toggle
+                                        label="Show animated backgrounds"
+                                        checked={settings.appearance.animatedBackgrounds}
+                                        onChange={(v) => handleToggle('appearance', 'animatedBackgrounds', v)}
+                                    />
+                                </div>
                             </SettingGroup>
                         </div>
                     </div>
@@ -291,11 +441,15 @@ const Settings: React.FC = () => {
                                                  // For now, let's just scan it for games as a fallback
                                                  setIsScanning(true);
                                                  try {
-                                                     const games = await window.ipcRenderer.invoke('manual:scan', path);
+                                                     const games = await window.ipcRenderer.invoke('manual:scanDirectory', path);
                                                      if (games.length > 0) {
                                                          if(confirm(`Found ${games.length} executables. Import them?`)) {
                                                              for (const g of games) {
-                                                                 await window.ipcRenderer.invoke('manual:add', g.title, g.installPath, g.executable);
+                                                                 await window.ipcRenderer.invoke('manual:addGame', {
+                                                                     title: g.title,
+                                                                     installPath: g.installPath,
+                                                                     executable: g.executable
+                                                                 });
                                                              }
                                                              loadGames();
                                                          }
@@ -375,27 +529,37 @@ const Settings: React.FC = () => {
                                         <div>
                                             <h4 className="text-sm font-medium text-blue-100">Connect Steam Account</h4>
                                             <p className="text-xs text-blue-200/70 mt-1">
-                                                Enter your Steam ID (64-bit) to fetch your owned games, including uninstalled ones.
-                                                Your profile must be set to Public.
+                                                Securely login to Steam to import your entire library (including uninstalled games), friends list, and achievements.
                                             </p>
                                         </div>
                                     </div>
                                 </div>
                                 
-                                <div className="space-y-3">
-                                    <div className="flex flex-col gap-1">
-                                        <label className="text-xs text-gray-400">Steam ID (64-bit)</label>
-                                        <input
-                                            type="text"
-                                            value={settings.integrations.steamId}
-                                            onChange={(e) => handleSelect('integrations', 'steamId', e.target.value)}
-                                            placeholder="76561198000000000"
-                                            className="bg-black/20 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500"
-                                        />
-                                        <p className="text-[10px] text-gray-500">
-                                            Find your Steam ID at <a href="#" className="text-blue-400 hover:underline" onClick={(e) => { e.preventDefault(); window.open('https://steamid.io', '_blank'); }}>steamid.io</a>
-                                        </p>
+                                <div className="flex items-center justify-between">
+                                    <div className="flex flex-col">
+                                        <span className="text-sm text-white font-medium">Status</span>
+                                        <span className={`text-xs ${settings.integrations.steamId ? 'text-green-400' : 'text-gray-500'}`}>
+                                            {settings.integrations.steamId ? `Connected (ID: ${settings.integrations.steamId})` : 'Not Connected'}
+                                        </span>
                                     </div>
+                                    <button
+                                        onClick={async () => {
+                                            const success = await window.ipcRenderer.invoke('auth:steam');
+                                            if (success) {
+                                                loadSettings();
+                                                alert('Steam connected successfully! Your library will sync shortly.');
+                                            } else {
+                                                alert('Steam login failed or was cancelled.');
+                                            }
+                                        }}
+                                        className={`px-4 py-2 rounded-lg text-xs font-bold transition-colors ${
+                                            settings.integrations.steamId 
+                                            ? 'bg-red-500/20 text-red-400 hover:bg-red-500/30' 
+                                            : 'bg-[#171a21] text-white hover:bg-[#1b2838] border border-white/10'
+                                        }`}
+                                    >
+                                        {settings.integrations.steamId ? 'Disconnect' : 'Login with Steam'}
+                                    </button>
                                 </div>
                             </SettingGroup>
 

@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { Play, Clock } from 'lucide-react';
+import { Play, Clock, Gamepad2, Users, TrendingUp, Trophy } from 'lucide-react';
 import { useGameStore } from '../stores/gameStore';
 import { useUIStore } from '../stores/uiStore';
 import { getPlatformIcon, getPlatformName } from '../utils/platformUtils';
@@ -20,14 +20,31 @@ const HeroSection: React.FC = () => {
         return dateB - dateA;
     })[0];
 
+    // Get Play Next suggestions (use recommendations or fallback to recent games)
+    const playNextGames = recommendations.length > 0 
+        ? recommendations.slice(0, 3) 
+        : games.filter(g => g.id !== lastPlayed?.id).slice(0, 3);
+
+    const getRecommendationReason = (index: number, game: any) => {
+        if (game.playStatus === 'backlog') return { text: 'Finish your backlog', icon: <Clock size={12} /> };
+        if (game.isFavorite) return { text: 'Jump back in', icon: <TrendingUp size={12} /> };
+        
+        const reasons = [
+            { text: 'Based on your history', icon: <Gamepad2 size={12} /> },
+            { text: 'Friends are playing', icon: <Users size={12} /> },
+            { text: 'Trending now', icon: <TrendingUp size={12} /> }
+        ];
+        return reasons[index % reasons.length];
+    };
+
     if (!lastPlayed) return null;
 
     const hasVideo = lastPlayed.backgroundVideo || (lastPlayed.heroImage && /\.(mp4|webm)$/i.test(lastPlayed.heroImage));
 
     return (
-        <div className="relative h-80 w-full rounded-2xl overflow-hidden shrink-0 group">
+        <div className="relative h-[500px] w-full rounded-2xl overflow-hidden shrink-0 group shadow-2xl ring-1 ring-white/10">
             {/* Background Media */}
-            <div className="absolute inset-0">
+            <div className="absolute inset-0 z-0">
                 {hasVideo ? (
                     <video
                         src={lastPlayed.backgroundVideo || lastPlayed.heroImage}
@@ -35,115 +52,119 @@ const HeroSection: React.FC = () => {
                         muted
                         loop
                         playsInline
-                        className="w-full h-full object-cover opacity-60 group-hover:scale-105 transition-transform duration-1000"
+                        className="w-full h-full object-cover opacity-60 group-hover:scale-105 transition-transform duration-[20s]"
                     />
                 ) : lastPlayed.heroImage ? (
                     <CachedImage 
                         src={lastPlayed.heroImage} 
                         alt="Hero Background" 
-                        className="w-full h-full object-cover opacity-60 group-hover:scale-105 transition-transform duration-1000"
+                        className="w-full h-full object-cover opacity-60 group-hover:scale-105 transition-transform duration-[20s]"
                     />
                 ) : (
-                    <div className="w-full h-full bg-gradient-to-br from-purple-900 to-slate-900" />
+                    <div className="w-full h-full bg-gradient-to-br from-indigo-900 to-slate-950" />
                 )}
-                <div className="absolute inset-0 bg-gradient-to-t from-slate-900 via-slate-900/60 to-transparent" />
-                <div className="absolute inset-0 bg-gradient-to-r from-slate-900 via-slate-900/60 to-transparent" />
+                <div className="absolute inset-0 bg-gradient-to-t from-[#0f172a] via-[#0f172a]/60 to-transparent" />
+                <div className="absolute inset-0 bg-gradient-to-r from-[#0f172a] via-[#0f172a]/40 to-transparent" />
             </div>
 
-            {/* Content */}
-            <div className="absolute bottom-0 left-0 p-8 w-full flex items-end justify-between z-10">
-                <div className="flex items-end gap-6">
-                    {/* Game Cover */}
-                    <div className="w-32 h-48 rounded-lg overflow-hidden shadow-2xl border border-white/10 transform group-hover:scale-105 transition-transform duration-500 origin-bottom-left hidden md:block">
-                        <CachedImage 
-                            src={lastPlayed.cover || ''} 
-                            alt={lastPlayed.title} 
-                            className="w-full h-full object-cover"
-                            placeholderSrc="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxIDEiPjxyZWN0IHdpZHRoPSIxIiBoZWlnaHQ9IjEiIGZpbGw9IiMxZTI5M2IiLz48L3N2Zz4="
-                        />
-                    </div>
-
-                    {/* Text Info */}
-                    <div className="mb-2 space-y-4">
-                        <div className="flex items-center gap-3">
-                            <div className="flex items-center gap-2 px-3 py-1 bg-white/10 backdrop-blur-md rounded-full border border-white/10">
-                                <img src={getPlatformIcon(lastPlayed.platform)} alt={lastPlayed.platform} className="w-4 h-4" />
-                                <span className="text-xs font-bold tracking-wider text-white uppercase">{getPlatformName(lastPlayed.platform)}</span>
-                            </div>
-                            {lastPlayed.lastPlayed && (
-                                <span className="text-xs text-gray-400 flex items-center gap-1">
-                                    <Clock size={12} />
-                                    Last played {new Date(lastPlayed.lastPlayed).toLocaleDateString()}
-                                </span>
-                            )}
-                        </div>
-                        
-                        <div>
-                            <h1 className="text-5xl font-black text-white tracking-tight leading-none mb-2 drop-shadow-lg line-clamp-1">
-                                {lastPlayed.title}
-                            </h1>
-                            <p className="text-gray-300 max-w-xl line-clamp-2 text-sm">
-                                {lastPlayed.description || "Ready to jump back in? This game is waiting for you."}
-                            </p>
-                        </div>
-
-                        <div className="flex gap-3">
-                            <button 
-                                onClick={() => launchGame(lastPlayed.id)}
-                                className="bg-white text-black hover:bg-gray-200 px-8 py-3 rounded-full font-bold flex items-center gap-2 transition-all hover:scale-105 shadow-[0_0_20px_rgba(255,255,255,0.2)]"
-                            >
-                                <Play size={18} fill="currentColor" />
-                                Resume
-                            </button>
-                            <button 
-                                onClick={() => setSelectedGame(lastPlayed)}
-                                className="bg-white/10 hover:bg-white/20 text-white px-6 py-3 rounded-full font-bold backdrop-blur-md border border-white/10 transition-all"
-                            >
-                                Details
-                            </button>
-                        </div>
-                    </div>
-                </div>
-
-                {/* Stats / Recommendations */}
-                <div className="hidden xl:flex flex-col gap-4 items-end">
-                    <div className="flex gap-4">
-                        <div className="text-right">
-                            <div className="text-3xl font-black text-white">{Math.round(lastPlayed.playtime || 0)}h</div>
-                            <div className="text-xs text-gray-500 font-bold uppercase tracking-wider">Total Playtime</div>
-                        </div>
-                        <div className="w-px h-10 bg-white/10"></div>
-                        <div className="text-right">
-                            <div className="text-3xl font-black text-green-400">{lastPlayed.achievements?.unlocked || 0}</div>
-                            <div className="text-xs text-gray-500 font-bold uppercase tracking-wider">Achievements</div>
-                        </div>
-                    </div>
-
-                    {recommendations.length > 0 && (
-                        <div className="mt-4">
-                            <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2 text-right">Recommended For You</h3>
-                            <div className="flex gap-3">
-                                {recommendations.slice(0, 3).map(rec => (
-                                    <div 
-                                        key={rec.id} 
-                                        onClick={() => setSelectedGame(rec)}
-                                        className="w-12 h-16 rounded-md overflow-hidden border border-white/10 hover:border-white/50 transition-colors cursor-pointer relative group/rec" 
-                                        title={rec.title}
-                                    >
-                                        <CachedImage 
-                                            src={rec.cover || ''} 
-                                            className="w-full h-full object-cover" 
-                                            placeholderSrc="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxIDEiPjxyZWN0IHdpZHRoPSIxIiBoZWlnaHQ9IjEiIGZpbGw9IiMxZTI5M2IiLz48L3N2Zz4="
-                                        />
-                                        <div className="absolute bottom-0 right-0 p-0.5 bg-black/60 backdrop-blur-sm">
-                                            <img src={getPlatformIcon(rec.platform)} alt={rec.platform} className="w-3 h-3" />
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
+            {/* Main Content Container */}
+            <div className="absolute inset-0 z-10 p-10 flex flex-col justify-end md:flex-row md:items-end md:justify-between gap-8">
+                
+                {/* Left Side: Main Game Info */}
+                <div className="flex-1 space-y-6 max-w-2xl">
+                    {/* Logo or Title */}
+                    {lastPlayed.logo ? (
+                         <img src={lastPlayed.logo} alt={lastPlayed.title} className="max-h-32 object-contain origin-left drop-shadow-2xl" />
+                    ) : (
+                        <h1 className="text-6xl font-black text-white tracking-tighter leading-none drop-shadow-2xl">
+                            {lastPlayed.title}
+                        </h1>
                     )}
+
+                    {/* Meta Tags */}
+                    <div className="flex items-center gap-4 text-sm font-medium text-gray-300">
+                        <div className="flex items-center gap-2 px-3 py-1 bg-white/10 backdrop-blur-md rounded-md border border-white/10">
+                            <img src={getPlatformIcon(lastPlayed.platform)} alt={lastPlayed.platform} className="w-4 h-4" />
+                            <span className="uppercase tracking-wider text-xs">{getPlatformName(lastPlayed.platform)}</span>
+                        </div>
+                        {lastPlayed.playtime > 0 && (
+                            <span className="flex items-center gap-1.5 bg-black/30 px-3 py-1 rounded-md border border-white/5">
+                                <Clock size={14} className="text-gray-400" />
+                                {Math.round(lastPlayed.playtime)}h Played
+                            </span>
+                        )}
+                        {lastPlayed.achievements && lastPlayed.achievements.total > 0 && (
+                            <span className="flex items-center gap-1.5 bg-black/30 px-3 py-1 rounded-md border border-white/5">
+                                <Trophy size={14} className="text-yellow-500" />
+                                {lastPlayed.achievements.unlocked}/{lastPlayed.achievements.total}
+                            </span>
+                        )}
+                    </div>
+
+                    {/* Action Buttons */}
+                    <div className="flex items-center gap-4 pt-2">
+                        <button 
+                            onClick={() => launchGame(lastPlayed.id)}
+                            className="bg-white text-black hover:bg-gray-200 px-10 py-4 rounded-xl font-bold flex items-center gap-3 transition-all hover:scale-105 shadow-[0_0_30px_rgba(255,255,255,0.2)] group/btn"
+                        >
+                            <Play size={24} fill="currentColor" className="group-hover/btn:fill-black" />
+                            <span className="text-lg">RESUME</span>
+                        </button>
+                        <button 
+                            onClick={() => setSelectedGame(lastPlayed)}
+                            className="bg-white/5 hover:bg-white/10 text-white px-8 py-4 rounded-xl font-bold backdrop-blur-md border border-white/10 transition-all hover:border-white/30"
+                        >
+                            DETAILS
+                        </button>
+                    </div>
                 </div>
+
+                {/* Right Side: Play Next Recommendations */}
+                <div className="flex flex-col gap-4 w-full md:w-auto min-w-[300px]">
+                    <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider flex items-center gap-2 mb-1">
+                        <Gamepad2 size={16} />
+                        Play Next
+                    </h3>
+                    
+                    <div className="flex flex-col gap-3">
+                        {playNextGames.map((game, idx) => {
+                            const reason = getRecommendationReason(idx, game);
+                            return (
+                                <div 
+                                    key={game.id}
+                                    onClick={() => setSelectedGame(game)}
+                                    className="group/card relative flex items-center gap-4 bg-black/40 hover:bg-white/10 backdrop-blur-md border border-white/5 hover:border-white/20 p-3 rounded-xl transition-all cursor-pointer w-full md:w-80"
+                                >
+                                    {/* Small Cover */}
+                                    <div className="w-16 h-12 rounded-lg overflow-hidden shrink-0 relative">
+                                        <CachedImage 
+                                            src={game.heroImage || game.cover || ''} 
+                                            className="w-full h-full object-cover transition-transform group-hover/card:scale-110" 
+                                        />
+                                        <div className="absolute inset-0 bg-black/20" />
+                                    </div>
+                                    
+                                    {/* Info */}
+                                    <div className="flex-1 min-w-0">
+                                        <div className="flex items-center gap-2 text-[10px] font-bold text-blue-400 uppercase tracking-wider mb-0.5">
+                                            {reason.icon}
+                                            {reason.text}
+                                        </div>
+                                        <h4 className="text-white font-bold truncate leading-tight group-hover/card:text-blue-400 transition-colors">
+                                            {game.title}
+                                        </h4>
+                                    </div>
+
+                                    {/* Platform Icon */}
+                                    <div className="opacity-50 group-hover/card:opacity-100 transition-opacity">
+                                        <img src={getPlatformIcon(game.platform)} alt={game.platform} className="w-5 h-5" />
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+
             </div>
         </div>
     );

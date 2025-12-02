@@ -24,7 +24,7 @@ export class RGBService {
             this.isConnected = true;
             console.log('Connected to OpenRGB');
         } catch (error) {
-            console.warn('Failed to connect to OpenRGB (Is the server running?):', error);
+            console.warn('Failed to connect to OpenRGB. Running in simulation mode.');
             this.isConnected = false;
         }
     }
@@ -36,11 +36,14 @@ export class RGBService {
 
     async setEffect(effect: string, speed: number, color?: {r: number, g: number, b: number}) {
         this.stopEffect();
+        // Try to connect if not connected, but don't block execution if it fails
         if (!this.isConnected) await this.connect();
-        if (!this.isConnected) return;
 
-        console.log(`Starting RGB effect: ${effect} with speed ${speed}`);
+        console.log(`Starting RGB effect: ${effect} with speed ${speed} (Simulated: ${!this.isConnected})`);
 
+        // Even if not connected, we run the logic to simulate the intervals
+        // This ensures the UI/Service logic remains consistent
+        
         switch (effect.toLowerCase()) {
             case 'breathing':
                 this.startBreathingEffect(speed, color || {r: 255, g: 255, b: 255});
@@ -79,7 +82,11 @@ export class RGBService {
     }
 
     private async applyColor(r: number, g: number, b: number) {
-        if (!this.isConnected) return;
+        if (!this.isConnected) {
+            // Simulation mode: just log occasionally or silently return
+            // console.log(`[RGB Sim] Color: rgb(${r}, ${g}, ${b})`);
+            return;
+        }
         try {
             const count = await this.client.getControllerCount();
             for (let i = 0; i < count; i++) {
@@ -89,6 +96,7 @@ export class RGBService {
             }
         } catch (error) {
             console.error('Error applying color:', error);
+            this.isConnected = false; // Assume connection lost on error
         }
     }
 
@@ -135,7 +143,10 @@ export class RGBService {
         this.effectInterval = setInterval(async () => {
             offset = (offset + speedFactor) % 360;
             
-            if (!this.isConnected) return;
+            if (!this.isConnected) {
+                // Simulation: Do nothing (or log if needed)
+                return;
+            }
             try {
                 const count = await this.client.getControllerCount();
                 for (let i = 0; i < count; i++) {
@@ -155,8 +166,8 @@ export class RGBService {
         }, intervalMs);
     }
 
-    private startStarryNight(_speed: number) {
-        const intervalMs = 100;
+    private startStarryNight(speed: number) {
+        const intervalMs = Math.max(20, 150 - speed);
         
         this.effectInterval = setInterval(async () => {
             if (!this.isConnected) return;
@@ -235,7 +246,15 @@ export class RGBService {
 
     async getDevices() {
         if (!this.isConnected) await this.connect();
-        if (!this.isConnected) return [];
+        
+        if (!this.isConnected) {
+            // Return mock devices for UI testing
+            return [
+                { id: 0, name: 'Simulated Keyboard', type: 'Keyboard', leds: 104 },
+                { id: 1, name: 'Simulated Mouse', type: 'Mouse', leds: 16 },
+                { id: 2, name: 'Simulated RAM', type: 'DRAM', leds: 8 }
+            ];
+        }
         
         try {
             const count = await this.client.getControllerCount();

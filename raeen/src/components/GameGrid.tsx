@@ -206,7 +206,11 @@ const GameGrid: React.FC = () => {
     };
 
     const sensors = useSensors(
-        useSensor(PointerSensor),
+        useSensor(PointerSensor, {
+            activationConstraint: {
+                distance: 8,
+            },
+        }),
         useSensor(KeyboardSensor, {
             coordinateGetter: sortableKeyboardCoordinates,
         })
@@ -344,7 +348,7 @@ const GameGrid: React.FC = () => {
                                 onLaunch={initiateLaunch}
                             />
                         ) : viewMode === 'grid' ? (
-                            <motion.div layout className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-4 p-4 overflow-y-auto content-start">
+                            <motion.div layout className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-6 p-4 overflow-y-auto content-start custom-scrollbar h-full">
                                 <AnimatePresence mode='popLayout'>
                                     {filteredGames.map(game => (
                                         <motion.div
@@ -354,7 +358,7 @@ const GameGrid: React.FC = () => {
                                             animate={{ opacity: 1, scale: 1 }}
                                             exit={{ opacity: 0, scale: 0.9 }}
                                             transition={{ duration: 0.2 }}
-                                            className="h-[300px]"
+                                            className="aspect-[2/3] w-full"
                                         >
                                             <SortableGameCard
                                                 game={game}

@@ -1,8 +1,9 @@
 import React, { useEffect, useState, useRef, useMemo } from 'react';
 import { useGameStore } from '../../stores/gameStore';
-import { Battery, Wifi, Settings, User, Play, Cpu, Activity, Star, Library, Clock } from 'lucide-react';
+import { Battery, Wifi, Settings, User, Play, Cpu, Activity, Star, Library, Clock, Gamepad2 } from 'lucide-react';
 import { useSystemStats } from '../../hooks/useSystemStats';
 import { useSound } from '../../hooks/useSound';
+import { getDominantColor } from '../../utils/colorUtils';
 
 interface BigPictureLayoutProps {
     onExit: () => void;
@@ -22,6 +23,7 @@ const BigPictureLayout: React.FC<BigPictureLayoutProps> = ({ onExit }) => {
     // Navigation State: 2D Grid
     const [activeRow, setActiveRow] = useState(0);
     const [activeCol, setActiveCol] = useState(0);
+    const [accentColor, setAccentColor] = useState<string>('#8b5cf6'); // Default purple
 
     // Refs for scrolling
     const rowContainerRef = useRef<HTMLDivElement>(null);
@@ -41,6 +43,10 @@ const BigPictureLayout: React.FC<BigPictureLayoutProps> = ({ onExit }) => {
         ).slice(0, 15);
 
         const favorites = games.filter(g => g.isFavorite);
+        
+        // Platform Rows (e.g., Steam, Epic)
+        const steamGames = games.filter(g => g.platform === 'Steam');
+        const epicGames = games.filter(g => g.platform === 'Epic Games');
 
         // Only show rows that have games
         const rows = [
@@ -48,6 +54,14 @@ const BigPictureLayout: React.FC<BigPictureLayoutProps> = ({ onExit }) => {
             { title: 'Favorites', icon: <Star size={20} />, games: favorites },
             { title: 'All Games', icon: <Library size={20} />, games: games }
         ];
+        
+        if (steamGames.length > 0) {
+            rows.push({ title: 'Steam Library', icon: <Gamepad2 size={20} />, games: steamGames });
+        }
+        
+        if (epicGames.length > 0) {
+            rows.push({ title: 'Epic Games', icon: <Gamepad2 size={20} />, games: epicGames });
+        }
 
         return rows.filter(r => r.games.length > 0);
     }, [games]);
@@ -57,6 +71,19 @@ const BigPictureLayout: React.FC<BigPictureLayoutProps> = ({ onExit }) => {
         if (!gameRows[activeRow]) return null;
         return gameRows[activeRow].games[activeCol];
     }, [gameRows, activeRow, activeCol]);
+
+    // Extract dynamic color
+    useEffect(() => {
+        let isMounted = true;
+        if (selectedGame?.cover) {
+            getDominantColor(selectedGame.cover).then(color => {
+                if (isMounted) setAccentColor(color);
+            });
+        } else {
+            setAccentColor('#8b5cf6');
+        }
+        return () => { isMounted = false; };
+    }, [selectedGame]);
 
     // Handle Navigation
     const handleNavigate = (direction: 'Up' | 'Down' | 'Left' | 'Right' | 'Enter' | 'Back') => {
@@ -147,10 +174,16 @@ const BigPictureLayout: React.FC<BigPictureLayoutProps> = ({ onExit }) => {
                         className="w-full h-full object-cover opacity-30 blur-md transition-all duration-700 animate-fade-in"
                     />
                 ) : (
-                    <div className="w-full h-full bg-gradient-to-br from-purple-900 to-slate-900 opacity-50" />
+                    <div 
+                        className="w-full h-full transition-colors duration-1000"
+                        style={{ background: `linear-gradient(to bottom right, ${accentColor}40, #020617)` }}
+                    />
                 )}
                 <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/90 to-slate-950/40" />
-                <div className="absolute inset-0 bg-gradient-to-r from-slate-950 via-transparent to-transparent" />
+                <div 
+                    className="absolute inset-0 transition-all duration-1000"
+                    style={{ background: `linear-gradient(to right, ${accentColor}20, transparent)` }}
+                />
             </div>
 
             {/* Top Bar */}
@@ -207,9 +240,16 @@ const BigPictureLayout: React.FC<BigPictureLayoutProps> = ({ onExit }) => {
                                 )}
                             </div>
 
-                            <h1 className="text-7xl font-black mb-6 leading-tight tracking-tighter drop-shadow-2xl text-transparent bg-clip-text bg-gradient-to-br from-white to-gray-400">
+                            <h1 className="text-7xl font-black mb-4 leading-tight tracking-tighter drop-shadow-2xl text-transparent bg-clip-text bg-gradient-to-br from-white to-gray-400">
                                 {selectedGame.title}
                             </h1>
+                            
+                            {/* Description Snippet */}
+                            {selectedGame.description && (
+                                <p className="text-lg text-gray-400 max-w-2xl line-clamp-2 mb-6 font-medium leading-relaxed">
+                                    {selectedGame.description}
+                                </p>
+                            )}
 
                             <div className="flex gap-8 text-sm text-gray-300 mb-8 items-center">
                                 <div className="flex flex-col">
@@ -231,8 +271,16 @@ const BigPictureLayout: React.FC<BigPictureLayoutProps> = ({ onExit }) => {
                             </div>
 
                             <div className="flex gap-4">
-                                <button className="group bg-white text-black px-10 py-4 rounded-full font-bold text-lg hover:bg-purple-500 hover:text-white hover:scale-105 transition-all flex items-center gap-3 shadow-xl shadow-white/10 hover:shadow-purple-500/50">
-                                    <Play fill="currentColor" className="group-hover:fill-white transition-colors" />
+                                <button 
+                                    className="group bg-white text-black px-10 py-4 rounded-full font-bold text-lg hover:scale-105 transition-all flex items-center gap-3 shadow-xl shadow-white/10"
+                                    style={{ boxShadow: `0 20px 40px -10px ${accentColor}60` }}
+                                >
+                                    <div 
+                                        className="p-1 rounded-full transition-colors"
+                                        style={{ color: accentColor }}
+                                    >
+                                        <Play fill="currentColor" className="group-hover:fill-black transition-colors" />
+                                    </div>
                                     <span>Play Game</span>
                                 </button>
                                 <button className="bg-white/5 text-white px-6 py-4 rounded-full font-bold text-lg hover:bg-white/20 hover:scale-105 transition-all backdrop-blur-md border border-white/10">
@@ -279,9 +327,12 @@ const BigPictureLayout: React.FC<BigPictureLayoutProps> = ({ onExit }) => {
                                                 className={`
                                                     relative flex-shrink-0 aspect-[2/3] rounded-xl overflow-hidden shadow-2xl transition-all duration-300
                                                     ${isActive
-                                                        ? 'w-64 ring-4 ring-purple-500 z-20 scale-105 shadow-purple-900/50'
+                                                        ? 'w-64 z-20 scale-105'
                                                         : 'w-56 scale-100 grayscale-[0.5] hover:grayscale-0'}
                                                 `}
+                                                style={isActive ? { 
+                                                    boxShadow: `0 0 0 4px ${accentColor}, 0 20px 50px -10px ${accentColor}80` 
+                                                } : {}}
                                             >
                                                 <img
                                                     src={game.cover}
@@ -316,6 +367,15 @@ const BigPictureLayout: React.FC<BigPictureLayoutProps> = ({ onExit }) => {
                     <div className="flex items-center gap-3">
                         <span className="w-8 h-8 rounded-full bg-red-500 text-black flex items-center justify-center font-bold shadow-lg shadow-red-500/50">B</span>
                         <span>Back</span>
+                    </div>
+                    <div className="flex items-center gap-3">
+                         <div className="flex gap-1">
+                             <div className="w-3 h-3 bg-gray-600 rounded-full"></div>
+                             <div className="w-3 h-3 bg-gray-600 rounded-full"></div>
+                             <div className="w-3 h-3 bg-gray-600 rounded-full"></div>
+                             <div className="w-3 h-3 bg-gray-600 rounded-full"></div>
+                         </div>
+                        <span>Navigate</span>
                     </div>
                 </div>
                 <div className="flex gap-4">

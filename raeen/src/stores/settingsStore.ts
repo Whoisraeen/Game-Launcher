@@ -12,6 +12,10 @@ export interface UserSettings {
         theme: 'dark' | 'light' | 'cyberpunk' | 'midnight';
         enableTransparency: boolean;
         animatedBackgrounds: boolean;
+        customBackground?: string;
+        blurLevel?: 'low' | 'medium' | 'high';
+        overlayOpacity?: number;
+        accentColor?: string;
     };
     gameManagement: {
         closeOnLaunch: boolean;

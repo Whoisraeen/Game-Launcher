@@ -41,8 +41,8 @@ import DLCManager from './components/pages/DLCManager';
 function App() {
   const [activePage, setActivePage] = useState('Library');
   const [isBigPicture, setIsBigPicture] = useState(false);
-  const { loadSettings } = useSettingsStore();
-  const { loadGames } = useGameStore();
+  const { settings, loadSettings } = useSettingsStore();
+  const { loadGames, initializeListeners } = useGameStore();
   const { toggleOverlay, isOverlayVisible } = usePerformanceStore();
 
   // Check for Overlay Window Mode
@@ -55,6 +55,7 @@ function App() {
   useEffect(() => {
     loadSettings();
     loadGames();
+    initializeListeners();
   }, []);
 
   const handleMinimize = () => {
@@ -106,11 +107,18 @@ function App() {
           {/* Background */}
           <div className="absolute inset-0 z-0">
             <img
-              src="https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/1716740/library_hero.jpg"
+              src={settings?.appearance.customBackground || "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/1716740/library_hero.jpg"}
               alt="Background"
-              className="absolute inset-0 w-full h-full object-cover opacity-20 blur-3xl scale-110"
+              className="absolute inset-0 w-full h-full object-cover scale-110 transition-all duration-1000"
+              style={{ 
+                  filter: `blur(${settings?.appearance.blurLevel === 'low' ? '8px' : settings?.appearance.blurLevel === 'high' ? '64px' : '32px'})`,
+                  opacity: 0.2 // Base opacity for the image itself
+              }}
             />
-            <div className="absolute inset-0 bg-gradient-to-t from-[var(--bg-primary)] via-[var(--bg-primary)]/80 to-[var(--bg-primary)]/40" />
+            <div 
+                className="absolute inset-0 bg-gradient-to-t from-[var(--bg-primary)] via-[var(--bg-primary)]/80 to-[var(--bg-primary)]/40" 
+                style={{ opacity: settings?.appearance.overlayOpacity ?? 0.6 }}
+            />
           </div>
 
           {/* Top Bar */}

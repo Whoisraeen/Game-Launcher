@@ -24,11 +24,12 @@ export class FriendsManager {
 
     constructor(notificationService?: NotificationService) {
         this.notificationService = notificationService;
-        this.seedInitialData();
+        // Production Mode: No fake seeding, no simulation
+        // this.seedInitialData(); 
         this.loadPreviousStates();
-        // Start simulation if in dev mode or just to keep things lively for the demo
-        // Disabled for production readiness to avoid mock notifications
-        // this.startSimulation();
+        
+        // Only start real-time sync loop
+        this.startRealTimeSync();
     }
 
     /**
@@ -206,12 +207,20 @@ export class FriendsManager {
         return this.getAll();
     }
 
-    startSimulation() {
+    startRealTimeSync() {
         if (this.simulationInterval) clearInterval(this.simulationInterval);
-        // Run every 5 seconds
+        
+        // Initial sync
+        this.syncSteamFriendsRealTime();
+
+        // Run every 60 seconds to respect API rate limits while keeping data fresh
         this.simulationInterval = setInterval(() => {
-            this.simulateActivity();
-        }, 5000);
+             this.syncSteamFriendsRealTime().then(friends => {
+                 if (friends.length > 0) {
+                     this.broadcastUpdate();
+                 }
+             });
+        }, 60000);
     }
 
     private broadcastUpdate() {
@@ -262,46 +271,50 @@ export class FriendsManager {
                     last_seen = excluded.last_seen
             `);
 
-            for (const player of players) {
-                // Map Steam Status to our Status
-                // personastate: 0 - Offline, 1 - Online, 2 - Busy, 3 - Away, 4 - Snooze, 5 - looking to trade, 6 - looking to play
-                let status: 'online' | 'offline' | 'away' | 'playing' | 'busy' = 'offline';
-                if (player.gameextrainfo) {
-                    status = 'playing';
-                } else {
-                    switch (player.personastate) {
-                        case 0: status = 'offline'; break;
-                        case 1: status = 'online'; break;
-                        case 2: status = 'busy'; break;
-                        case 3: status = 'away'; break;
-                        case 4: status = 'away'; break; // Snooze -> Away
-                        default: status = 'online';
+            const dbTransaction = db.transaction((players) => {
+                for (const player of players) {
+                    // Map Steam Status to our Status
+                    // personastate: 0 - Offline, 1 - Online, 2 - Busy, 3 - Away, 4 - Snooze, 5 - looking to trade, 6 - looking to play
+                    let status: 'online' | 'offline' | 'away' | 'playing' | 'busy' = 'offline';
+                    if (player.gameextrainfo) {
+                        status = 'playing';
+                    } else {
+                        switch (player.personastate) {
+                            case 0: status = 'offline'; break;
+                            case 1: status = 'online'; break;
+                            case 2: status = 'busy'; break;
+                            case 3: status = 'away'; break;
+                            case 4: status = 'away'; break; // Snooze -> Away
+                            default: status = 'online';
+                        }
                     }
+
+                    const friendData = {
+                        id: player.steamid, // Use SteamID as ID for uniqueness
+                        username: player.personaname,
+                        avatar_url: player.avatarfull,
+                        status: status,
+                        activity: player.gameextrainfo || null,
+                        last_seen: new Date(player.lastlogoff * 1000).toISOString(),
+                        platform: 'steam',
+                        created_at: Date.now()
+                    };
+
+                    insertStmt.run(friendData);
+                    
+                    syncedFriends.push({
+                        id: friendData.id,
+                        username: friendData.username,
+                        avatar: friendData.avatar_url,
+                        status: friendData.status,
+                        activity: friendData.activity || undefined,
+                        lastSeen: friendData.last_seen,
+                        platform: 'steam'
+                    });
                 }
+            });
 
-                const friendData = {
-                    id: player.steamid, // Use SteamID as ID for uniqueness
-                    username: player.personaname,
-                    avatar_url: player.avatarfull,
-                    status: status,
-                    activity: player.gameextrainfo || null,
-                    last_seen: new Date(player.lastlogoff * 1000).toISOString(),
-                    platform: 'steam',
-                    created_at: Date.now()
-                };
-
-                insertStmt.run(friendData);
-                
-                syncedFriends.push({
-                    id: friendData.id,
-                    username: friendData.username,
-                    avatar: friendData.avatar_url,
-                    status: friendData.status,
-                    activity: friendData.activity || undefined,
-                    lastSeen: friendData.last_seen,
-                    platform: 'steam'
-                });
-            }
+            dbTransaction(players);
 
             return syncedFriends;
 

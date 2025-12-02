@@ -29,6 +29,7 @@ export class GameManager extends EventEmitter {
     private crashAnalyzerService: CrashAnalyzerService;
     private notificationService: NotificationService;
     private gamingSessionService: GamingSessionService;
+    private settingsManager: SettingsManager;
     private dbClient: DatabaseWorkerClient;
 
     constructor() {
@@ -42,7 +43,11 @@ export class GameManager extends EventEmitter {
         this.crashAnalyzerService = new CrashAnalyzerService();
         this.notificationService = new NotificationService();
         this.gamingSessionService = new GamingSessionService();
+        this.settingsManager = new SettingsManager();
         this.dbClient = DatabaseWorkerClient.getInstance();
+
+        // Initialize Discord RPC
+        DiscordManager.getInstance();
     }
 
     setPerformanceService(service: PerformanceService) {
@@ -641,8 +646,21 @@ export class GameManager extends EventEmitter {
             if (game.executable) {
                 setTimeout(async () => {
                     this.playtimeTracker.startTracking(gameId, game.executable);
+                    
+                    // Update Discord Status if enabled
+                    const settings = this.settingsManager.getAllSettings();
+                    if (settings.integrations.discordEnabled) {
+                        DiscordManager.getInstance().setActivity(game.title, 'Playing');
+                    }
+                    
                     // Optimization logic removed for now
                 }, 5000);
+            } else {
+                // Fallback for platforms where we don't track executable directly (like consoles/cloud if added)
+                const settings = this.settingsManager.getAllSettings();
+                if (settings.integrations.discordEnabled) {
+                    DiscordManager.getInstance().setActivity(game.title, 'Playing');
+                }
             }
 
             return true;

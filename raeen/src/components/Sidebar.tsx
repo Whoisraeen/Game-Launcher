@@ -86,23 +86,26 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage, onNavigate }) => {
 
     return (
         <>
-            <div className="glass-panel w-72 h-full flex flex-col p-4 gap-6 z-20 relative">
+            <div className="glass-frosted w-72 h-full flex flex-col p-4 gap-6 z-20 relative border-r border-white/5">
                 {/* User Profile */}
-                <div className="flex items-center gap-3 p-2 rounded-xl bg-white/5 border border-white/5 shadow-lg">
+                <div className="flex items-center gap-3 p-3 rounded-2xl bg-white/5 border border-white/10 shadow-xl hover:bg-white/10 transition-colors cursor-pointer group">
                     <div className="relative">
-                        <img
-                            src={settings?.account.avatar || "https://api.dicebear.com/7.x/avataaars/svg?seed=Guest"}
-                            alt="User"
-                            className="w-10 h-10 rounded-full bg-slate-700"
-                        />
-                        <div className={`absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-slate-900 ${settings?.account.status === 'online' ? 'bg-green-500' :
+                        <div className="w-12 h-12 rounded-full p-[2px] bg-gradient-to-br from-blue-500 to-purple-600 group-hover:shadow-[0_0_15px_rgba(59,130,246,0.5)] transition-shadow">
+                            <img
+                                src={settings?.account.avatar || "https://api.dicebear.com/7.x/avataaars/svg?seed=Guest"}
+                                alt="User"
+                                className="w-full h-full rounded-full bg-slate-900 object-cover"
+                            />
+                        </div>
+                        <div className={`absolute bottom-0 right-0 w-3.5 h-3.5 rounded-full border-2 border-slate-900 shadow-sm ${settings?.account.status === 'online' ? 'bg-green-500' :
                             settings?.account.status === 'playing' ? 'bg-purple-500' :
                                 settings?.account.status === 'away' ? 'bg-yellow-500' : 'bg-gray-500'
                             }`}></div>
                     </div>
                     <div className="flex flex-col overflow-hidden">
-                        <span className="text-sm font-bold text-white truncate">{settings?.account.username || "Guest"}</span>
-                        <span className="text-xs text-green-400 truncate flex items-center gap-1">
+                        <span className="text-sm font-bold text-white truncate tracking-tight group-hover:text-blue-200 transition-colors">{settings?.account.username || "Guest"}</span>
+                        <span className="text-[10px] font-medium text-green-400 truncate flex items-center gap-1.5 uppercase tracking-wider">
+                            <div className={`w-1.5 h-1.5 rounded-full ${settings?.account.status === 'online' ? 'bg-green-500 animate-pulse' : 'bg-gray-500'}`}></div>
                             {settings?.account.status === 'playing' ? 'Playing...' :
                                 settings?.account.status === 'online' ? 'Online' :
                                     settings?.account.status === 'away' ? 'Away' : 'Offline'}
@@ -110,7 +113,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage, onNavigate }) => {
                     </div>
                 </div>
 
-                <div className="flex-1 overflow-y-auto custom-scrollbar space-y-1">
+                <div className="flex-1 overflow-y-auto custom-scrollbar space-y-1 pr-2">
                     <NavItem
                         icon={<LayoutGrid size={20} />}
                         label="All Games"
@@ -214,20 +217,41 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage, onNavigate }) => {
     );
 };
 
-const NavItem = ({ icon, label, active = false, badge, onClick }: { icon: React.ReactNode, label: string, active?: boolean, badge?: string, onClick?: () => void }) => (
-    <div onClick={onClick} className={`flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-all duration-200 group relative ${active ? 'bg-gradient-to-r from-blue-500/20 to-transparent text-white border-l-2 border-blue-500' : 'text-gray-400 hover:bg-white/5 hover:text-white'}`}>
-        <span className={`transition-colors ${active ? 'text-blue-400' : 'group-hover:text-blue-400'}`}>
-            {icon}
+const NavItem = ({ icon, label, active, onClick, badge }: any) => (
+    <div
+        onClick={onClick}
+        className={`
+            group flex items-center gap-3 px-3 py-2.5 rounded-xl cursor-pointer transition-all duration-300 relative overflow-hidden
+            ${active 
+                ? 'bg-gradient-to-r from-blue-600/20 to-purple-600/20 text-white shadow-[inset_0_0_20px_rgba(59,130,246,0.1)] border border-white/10' 
+                : 'text-gray-400 hover:bg-white/5 hover:text-white hover:translate-x-1'}
+        `}
+    >
+        {/* Active Indicator Line */}
+        {active && (
+            <div className="absolute left-0 top-2 bottom-2 w-1 bg-blue-500 rounded-full shadow-[0_0_10px_rgba(59,130,246,0.8)]"></div>
+        )}
+
+        <span className={`transition-colors duration-300 relative z-10 ${active ? 'text-blue-400' : 'group-hover:text-blue-400'}`}>
+            {React.cloneElement(icon, { 
+                size: 18, 
+                className: active ? "drop-shadow-[0_0_8px_rgba(59,130,246,0.5)]" : "" 
+            })}
         </span>
-        <span className="font-medium text-sm">{label}</span>
+        
+        <span className="font-medium text-sm flex-1 truncate relative z-10">{label}</span>
+        
         {badge && (
-            <span className={`ml-auto text-[10px] font-bold px-1.5 py-0.5 rounded-full ${active ? 'bg-blue-500 text-white' : 'bg-slate-700 text-gray-300 group-hover:bg-slate-600'}`}>
+            <span className={`
+                text-[10px] font-bold px-1.5 py-0.5 rounded-md shadow-sm relative z-10
+                ${active ? 'bg-blue-500 text-white' : 'bg-white/10 text-gray-300 group-hover:bg-white/20'}
+            `}>
                 {badge}
             </span>
         )}
-        {active && (
-            <div className="absolute left-0 top-0 bottom-0 w-1 bg-blue-500 rounded-r-full shadow-[0_0_10px_rgba(59,130,246,0.5)]"></div>
-        )}
+        
+        {/* Hover Glow Effect */}
+        <div className="absolute inset-0 bg-gradient-to-r from-white/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none"></div>
     </div>
 );
 

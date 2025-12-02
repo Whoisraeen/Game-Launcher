@@ -1,5 +1,5 @@
 import React from 'react';
-import { X, Play, Clock, Calendar, HardDrive, Tag, EyeOff, Eye, Heart, Terminal, Bookmark, Star, FileText, Download, Trophy } from 'lucide-react';
+import { X, Play, Clock, Calendar, HardDrive, Tag, EyeOff, Eye, Heart, Terminal, Bookmark, Star, FileText, Download, Trophy, ChevronLeft } from 'lucide-react';
 import { Game } from '../types';
 import { getPlatformIcon } from '../utils/platformUtils';
 import { useGameStore } from '../stores/gameStore';
@@ -474,13 +474,28 @@ const GameDetailsModal: React.FC<GameDetailsModalProps> = ({ game, onClose, onPl
 
                 {/* Achievements Full View Modal */}
                 {showAchievements && achievementStats && achievementStats.total > 0 && (
-                    <div className="absolute inset-0 bg-[#0f172a] z-10 p-6 overflow-hidden flex flex-col">
-                        <AchievementsList
-                            gameId={game.id}
-                            gameName={game.title}
-                            platform={game.platform}
-                            platformId={game.platformId}
-                        />
+                    <div className="absolute inset-0 bg-[#0f172a] z-10 flex flex-col animate-in slide-in-from-right duration-200">
+                        <div className="flex items-center justify-between p-6 border-b border-white/10 bg-black/20">
+                            <h2 className="text-2xl font-bold text-white flex items-center gap-3">
+                                <Trophy className="text-yellow-500" />
+                                Achievements
+                            </h2>
+                            <button 
+                                onClick={() => setShowAchievements(false)}
+                                className="flex items-center gap-2 px-4 py-2 bg-white/10 hover:bg-white/20 rounded-lg text-sm font-bold text-white transition-colors"
+                            >
+                                <ChevronLeft size={16} />
+                                Back to Details
+                            </button>
+                        </div>
+                        <div className="flex-1 overflow-hidden p-6">
+                            <AchievementsList
+                                gameId={game.id}
+                                gameName={game.title}
+                                platform={game.platform}
+                                platformId={game.platformId}
+                            />
+                        </div>
                     </div>
                 )}
             </div>

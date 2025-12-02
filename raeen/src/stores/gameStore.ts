@@ -54,6 +54,9 @@ interface GameState {
     // Merging
     mergeGames: (primaryId: string, secondaryId: string) => Promise<void>;
     unmergeGame: (gameId: string) => Promise<void>;
+    
+    // Listeners
+    initializeListeners: () => void;
 }
 
 export const useGameStore = create<GameState>((set, get) => ({
@@ -147,6 +150,28 @@ export const useGameStore = create<GameState>((set, get) => ({
         } catch (error) {
             set({ error: (error as Error).message, isLoading: false });
         }
+    },
+
+    initializeListeners: () => {
+        // Clean up existing listeners to avoid duplicates
+        window.ipcRenderer.removeAllListeners('library:updated');
+        window.ipcRenderer.removeAllListeners('game:installed');
+        window.ipcRenderer.removeAllListeners('game:uninstalled');
+        
+        window.ipcRenderer.on('library:updated', () => {
+            console.log('Library updated event received');
+            get().loadGames(true);
+        });
+
+        window.ipcRenderer.on('game:installed', () => {
+             console.log('Game installed event received');
+             get().loadGames(true);
+        });
+
+        window.ipcRenderer.on('game:uninstalled', () => {
+             console.log('Game uninstalled event received');
+             get().loadGames(true);
+        });
     },
 
     loadGames: async (reset = false) => {

@@ -1,4 +1,7 @@
 import { getDb } from '../database';
+import fs from 'fs';
+import path from 'path';
+import { app } from 'electron';
 
 export interface UserSettings {
   general: {
@@ -10,6 +13,10 @@ export interface UserSettings {
     theme: 'dark' | 'light' | 'cyberpunk' | 'midnight';
     enableTransparency: boolean;
     animatedBackgrounds: boolean;
+    customBackground?: string;
+    blurLevel: 'low' | 'medium' | 'high';
+    overlayOpacity: number;
+    accentColor: string;
   };
   gameManagement: {
     closeOnLaunch: boolean;
@@ -56,6 +63,10 @@ const DEFAULT_SETTINGS: UserSettings = {
     theme: 'dark',
     enableTransparency: true,
     animatedBackgrounds: true,
+    customBackground: '',
+    blurLevel: 'medium',
+    overlayOpacity: 0.6,
+    accentColor: '#4f46e5',
   },
   gameManagement: {
     closeOnLaunch: false,
@@ -98,57 +109,62 @@ export class SettingsManager {
     const db = getDb();
     const rows = db.prepare('SELECT key, value FROM settings').all() as { key: string; value: string }[];
     
-    const settings: any = { ...DEFAULT_SETTINGS };
+    const settings = { ...DEFAULT_SETTINGS };
 
-    // Hydrate from DB
-    for (const row of rows) {
+    rows.forEach(row => {
       try {
-        // We store nested keys as 'category.key' or just rely on the structure
-        // But for simplicity in this key-value table, let's assume we store the whole JSON for each category
-        // OR we store flat keys.
-        
-        // Let's support flat keys for categories: 'general', 'appearance', 'gameManagement'
-        if (settings[row.key]) {
-            settings[row.key] = { ...settings[row.key], ...JSON.parse(row.value) };
+        const [category, key] = row.key.split('.');
+        if (category && key && (settings as any)[category]) {
+           // Handle type conversion if needed
+           let val: any = row.value;
+           if (val === 'true') val = true;
+           if (val === 'false') val = false;
+           if (!isNaN(Number(val)) && val !== '') val = Number(val);
+           
+           (settings as any)[category][key] = val;
         }
       } catch (e) {
-        console.error(`Failed to parse setting for ${row.key}`, e);
+        console.warn(`Failed to parse setting: ${row.key}`);
       }
-    }
+    });
 
-    return settings as UserSettings;
+    return settings;
   }
 
-  updateSetting<K extends keyof UserSettings>(category: K, value: Partial<UserSettings[K]>) {
+  updateSetting(category: string, values: any): UserSettings {
     const db = getDb();
+    const stmt = db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)');
     
-    // Get current category value
-    const current = this.getCategory(category);
-    const updated = { ...current, ...value };
-    
-    db.prepare(`
-      INSERT INTO settings (key, value, updated_at)
-      VALUES (?, ?, ?)
-      ON CONFLICT(key) DO UPDATE SET
-        value = excluded.value,
-        updated_at = excluded.updated_at
-    `).run(category, JSON.stringify(updated), Date.now());
+    const transaction = db.transaction((cat, vals) => {
+      Object.entries(vals).forEach(([key, value]) => {
+        stmt.run(`${cat}.${key}`, String(value));
+      });
+    });
 
+    transaction(category, values);
     return this.getAllSettings();
   }
 
-  private getCategory<K extends keyof UserSettings>(category: K): UserSettings[K] {
-    const db = getDb();
-    const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(category) as { value: string } | undefined;
-    
-    if (row) {
+  async uploadBackground(filePath: string): Promise<string> {
       try {
-        return { ...DEFAULT_SETTINGS[category], ...JSON.parse(row.value) };
-      } catch (e) {
-        return DEFAULT_SETTINGS[category];
+          const userDataPath = app.getPath('userData');
+          const backgroundsDir = path.join(userDataPath, 'backgrounds');
+          
+          if (!fs.existsSync(backgroundsDir)) {
+              fs.mkdirSync(backgroundsDir, { recursive: true });
+          }
+
+          const ext = path.extname(filePath);
+          const fileName = `bg_${Date.now()}${ext}`;
+          const destPath = path.join(backgroundsDir, fileName);
+
+          await fs.promises.copyFile(filePath, destPath);
+          
+          // Return file protocol URL for easy display in renderer
+          return `file://${destPath.replace(/\\/g, '/')}`;
+      } catch (error) {
+          console.error('Failed to upload background:', error);
+          throw error;
       }
-    }
-    
-    return DEFAULT_SETTINGS[category];
   }
 }

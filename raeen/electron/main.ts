@@ -40,6 +40,9 @@ import { SupabaseService } from './services/supabaseService';
 import { GamingSessionService } from './services/gamingSessionService';
 import { ExpenseTrackerService } from './services/expenseTrackerService';
 import { StoreService } from './services/storeService';
+import { Store } from './store';
+import { StoreService as ElectronStoreService } from './services/store';
+import { AuthManager } from './services/AuthManager';
 import { ObsConnectionConfig } from './types';
 
 // Services Instances
@@ -71,6 +74,7 @@ let supabaseService: SupabaseService;
 let gamingSessionService: GamingSessionService;
 let expenseTrackerService: ExpenseTrackerService;
 let storeService: StoreService;
+let authManager: AuthManager;
 
 // Controllers Instances
 let gameController: GameController;
@@ -190,7 +194,8 @@ app.whenReady().then(async () => {
     gamingSessionService = new GamingSessionService();
     expenseTrackerService = new ExpenseTrackerService();
     storeService = new StoreService();
-
+    authManager = new AuthManager();
+    
     // Initialize Controllers
     // This registers the game handlers!
     gameController = new GameController(gameManager);
@@ -282,11 +287,40 @@ app.whenReady().then(async () => {
 
     // Settings IPC Handlers
     ipcMain.handle('settings:getAll', () => {
-      return settingsManager.getAllSettings();
+      try {
+        return settingsManager.getAllSettings();
+      } catch (error) {
+        console.error('Failed to get settings:', error);
+        return {};
+      }
     });
 
-    ipcMain.handle('settings:set', (_, key: string, value: any) => {
-      return settingsManager.setSetting(key, value);
+    ipcMain.handle('settings:update', (_, category: string, value: any) => {
+      try {
+        return settingsManager.updateSetting(category, value);
+      } catch (error) {
+        console.error('Failed to update setting:', error);
+        throw error;
+      }
+    });
+
+    ipcMain.handle('settings:uploadBackground', async () => {
+      try {
+        const { dialog } = await import('electron');
+        const result = await dialog.showOpenDialog({
+            properties: ['openFile'],
+            filters: [{ name: 'Images', extensions: ['jpg', 'png', 'jpeg', 'webp', 'gif'] }]
+        });
+
+        if (result.canceled || result.filePaths.length === 0) {
+            return null;
+        }
+
+        return await settingsManager.uploadBackground(result.filePaths[0]);
+      } catch (error) {
+        console.error('Failed to upload background:', error);
+        throw error;
+      }
     });
 
     ipcMain.handle('settings:reset', () => {
@@ -320,59 +354,57 @@ app.whenReady().then(async () => {
     // });
 
     // Mod Manager IPC Handlers
-    ipcMain.handle('mods:scan', async (_, gameId: string) => {
+    ipcMain.handle('mods:getAll', async (_, gameId: string) => {
       try {
-        const game = await gameManager.dbClient.get('SELECT * FROM games WHERE id = ?', gameId);
-        if (!game) throw new Error('Game not found');
-        return await universalModManager.scanMods(gameId, game.install_path);
+        return universalModManager.getMods(gameId);
       } catch (error) {
-        console.error('Failed to scan mods:', error);
+        console.error('Failed to get mods:', error);
+        return [];
+      }
+    });
+
+    ipcMain.handle('mods:add', async (_, gameId: string, name: string, description: string, version: string, installPath: string) => {
+      try {
+        return universalModManager.addMod(gameId, name, description, version, installPath);
+      } catch (error) {
+        console.error('Failed to add mod:', error);
         throw error;
       }
     });
 
-    ipcMain.handle('mods:install', async (_, gameId: string, modFilePath: string) => {
+    ipcMain.handle('mods:enable', async (_, modId: string) => {
       try {
-        return await universalModManager.installMod(gameId, modFilePath);
+        return await universalModManager.enableMod(modId);
       } catch (error) {
-        console.error('Failed to install mod:', error);
-        throw error;
+        console.error('Failed to enable mod:', error);
+        return false;
       }
     });
 
-    ipcMain.handle('mods:toggle', async (_, modId: string, enabled: boolean) => {
+    ipcMain.handle('mods:disable', async (_, modId: string) => {
       try {
-        return await universalModManager.toggleMod(modId, enabled);
+        return await universalModManager.disableMod(modId);
       } catch (error) {
-        console.error('Failed to toggle mod:', error);
-        throw error;
+        console.error('Failed to disable mod:', error);
+        return false;
       }
     });
 
-    ipcMain.handle('mods:uninstall', async (_, modId: string) => {
+    ipcMain.handle('mods:delete', async (_, modId: string) => {
       try {
-        return await universalModManager.uninstallMod(modId);
+        return universalModManager.deleteMod(modId);
       } catch (error) {
-        console.error('Failed to uninstall mod:', error);
-        throw error;
+        console.error('Failed to delete mod:', error);
+        return false;
       }
     });
 
-    ipcMain.handle('mods:getLoadOrder', async (_, gameId: string) => {
+    ipcMain.handle('mods:checkConflicts', (_, gameId: string) => {
       try {
-        return await universalModManager.getLoadOrder(gameId);
+        return universalModManager.checkConflicts(gameId);
       } catch (error) {
-        console.error('Failed to get load order:', error);
-        throw error;
-      }
-    });
-
-    ipcMain.handle('mods:updateLoadOrder', async (_, gameId: string, modIds: string[]) => {
-      try {
-        return await universalModManager.updateLoadOrder(gameId, modIds);
-      } catch (error) {
-        console.error('Failed to update load order:', error);
-        throw error;
+        console.error('Failed to check mod conflicts:', error);
+        return [];
       }
     });
 
@@ -400,7 +432,9 @@ app.whenReady().then(async () => {
     // Manual Game IPC Handlers
     ipcMain.handle('manual:addGame', async (_, gameData: any) => {
       try {
-        return await manualGameService.addManualGame(gameData);
+        // Destructure gameData to match addGame signature
+        const { title, installPath, executable } = gameData;
+        return await manualGameService.addGame(title, installPath, executable);
       } catch (error) {
         console.error('Failed to add manual game:', error);
         throw error;
@@ -409,7 +443,7 @@ app.whenReady().then(async () => {
 
     ipcMain.handle('manual:scanDirectory', async (_, directory: string) => {
       try {
-        return await manualGameService.scanDirectory(directory);
+        return await manualGameService.scanFolder(directory);
       } catch (error) {
         console.error('Failed to scan directory:', error);
         throw error;
@@ -558,6 +592,16 @@ app.whenReady().then(async () => {
         }
     });
     
+    // Store IPC Handlers
+    ipcMain.handle('store:getDeals', async (_, params) => {
+        try {
+            return await storeService.getDeals(params);
+        } catch (error) {
+            console.error('Failed to get store deals:', error);
+            return [];
+        }
+    });
+
     // Update Manager IPC Handlers
     ipcMain.handle('updates:checkAll', async () => {
         try {
