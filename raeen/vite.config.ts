@@ -14,7 +14,8 @@ export default defineConfig({
         vite: {
           build: {
             rollupOptions: {
-              external: ['better-sqlite3'], // Don't bundle native modules
+              // Don't bundle native modules or deps that eagerly require Node 22+ builtins (e.g. undici 7's SqliteCacheStore -> node:sqlite)
+              external: ['better-sqlite3', 'undici', 'cheerio', /^node:/],
               input: {
                 main: path.join(__dirname, 'electron/main.ts'),
                 // Ensure worker is built

@@ -153,6 +153,10 @@ export const useGameStore = create<GameState>((set, get) => ({
     },
 
     initializeListeners: () => {
+        if (!window.ipcRenderer) {
+            console.warn('initializeListeners: window.ipcRenderer is undefined (preload not loaded?). Skipping.');
+            return;
+        }
         // Clean up existing listeners to avoid duplicates
         window.ipcRenderer.removeAllListeners('library:updated');
         window.ipcRenderer.removeAllListeners('game:installed');
