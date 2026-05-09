@@ -42,7 +42,7 @@ const HeroSection: React.FC = () => {
     const hasVideo = lastPlayed.backgroundVideo || (lastPlayed.heroImage && /\.(mp4|webm)$/i.test(lastPlayed.heroImage));
 
     return (
-        <div className="relative h-[500px] w-full rounded-2xl overflow-hidden shrink-0 group shadow-2xl ring-1 ring-white/10">
+        <div className="relative h-[460px] w-full rounded-3xl overflow-hidden shrink-0 group shadow-[0_24px_60px_-20px_rgba(0,0,0,0.7)] ring-1 ring-white/10">
             {/* Background Media */}
             <div className="absolute inset-0 z-0">
                 {hasVideo ? (
@@ -68,51 +68,56 @@ const HeroSection: React.FC = () => {
             </div>
 
             {/* Main Content Container */}
-            <div className="absolute inset-0 z-10 p-10 flex flex-col justify-end md:flex-row md:items-end md:justify-between gap-8">
-                
+            <div className="absolute inset-0 z-10 p-8 md:p-10 flex flex-col justify-end md:flex-row md:items-end md:justify-between gap-8">
+
                 {/* Left Side: Main Game Info */}
-                <div className="flex-1 space-y-6 max-w-2xl">
+                <div className="flex-1 space-y-5 max-w-2xl">
+                    {/* Eyebrow */}
+                    <span className="inline-flex items-center gap-1.5 text-[10px] uppercase tracking-[0.25em] font-bold text-blue-300/90 bg-blue-500/10 border border-blue-400/20 px-2.5 py-1 rounded-full">
+                        <TrendingUp size={11} /> Continue Playing
+                    </span>
+
                     {/* Logo or Title */}
                     {lastPlayed.logo ? (
-                         <img src={lastPlayed.logo} alt={lastPlayed.title} className="max-h-32 object-contain origin-left drop-shadow-2xl" />
+                         <img src={lastPlayed.logo} alt={lastPlayed.title} className="max-h-28 object-contain origin-left drop-shadow-2xl" />
                     ) : (
-                        <h1 className="text-6xl font-black text-white tracking-tighter leading-none drop-shadow-2xl">
+                        <h1 className="text-5xl md:text-6xl font-black text-white tracking-tighter leading-[0.95] drop-shadow-2xl">
                             {lastPlayed.title}
                         </h1>
                     )}
 
                     {/* Meta Tags */}
-                    <div className="flex items-center gap-4 text-sm font-medium text-gray-300">
-                        <div className="flex items-center gap-2 px-3 py-1 bg-white/10 backdrop-blur-md rounded-md border border-white/10">
-                            <img src={getPlatformIcon(lastPlayed.platform)} alt={lastPlayed.platform} className="w-4 h-4" />
-                            <span className="uppercase tracking-wider text-xs">{getPlatformName(lastPlayed.platform)}</span>
+                    <div className="flex items-center gap-2 text-xs font-medium text-gray-200 flex-wrap">
+                        <div className="flex items-center gap-1.5 px-2.5 py-1 bg-white/8 backdrop-blur-md rounded-full border border-white/10">
+                            <img src={getPlatformIcon(lastPlayed.platform)} alt={lastPlayed.platform} className="w-3 h-3" />
+                            <span className="uppercase tracking-wider text-[10px] font-bold">{getPlatformName(lastPlayed.platform)}</span>
                         </div>
                         {lastPlayed.playtime > 0 && (
-                            <span className="flex items-center gap-1.5 bg-black/30 px-3 py-1 rounded-md border border-white/5">
-                                <Clock size={14} className="text-gray-400" />
-                                {Math.round(lastPlayed.playtime)}h Played
+                            <span className="flex items-center gap-1.5 bg-black/30 px-2.5 py-1 rounded-full border border-white/5">
+                                <Clock size={11} className="text-gray-400" />
+                                <span className="text-[11px]">{Math.round(lastPlayed.playtime)}h played</span>
                             </span>
                         )}
                         {lastPlayed.achievements && lastPlayed.achievements.total > 0 && (
-                            <span className="flex items-center gap-1.5 bg-black/30 px-3 py-1 rounded-md border border-white/5">
-                                <Trophy size={14} className="text-yellow-500" />
-                                {lastPlayed.achievements.unlocked}/{lastPlayed.achievements.total}
+                            <span className="flex items-center gap-1.5 bg-black/30 px-2.5 py-1 rounded-full border border-white/5">
+                                <Trophy size={11} className="text-yellow-400" />
+                                <span className="text-[11px]">{lastPlayed.achievements.unlocked}/{lastPlayed.achievements.total}</span>
                             </span>
                         )}
                     </div>
 
                     {/* Action Buttons */}
-                    <div className="flex items-center gap-4 pt-2">
-                        <button 
+                    <div className="flex items-center gap-3 pt-1">
+                        <button
                             onClick={() => launchGame(lastPlayed.id)}
-                            className="bg-white text-black hover:bg-gray-200 px-10 py-4 rounded-xl font-bold flex items-center gap-3 transition-all hover:scale-105 shadow-[0_0_30px_rgba(255,255,255,0.2)] group/btn"
+                            className="bg-white text-black hover:bg-gray-100 px-7 py-3 rounded-xl font-black flex items-center gap-2.5 transition-all hover:scale-[1.03] shadow-[0_8px_32px_rgba(255,255,255,0.18)]"
                         >
-                            <Play size={24} fill="currentColor" className="group-hover/btn:fill-black" />
-                            <span className="text-lg">RESUME</span>
+                            <Play size={18} fill="currentColor" />
+                            <span className="text-sm tracking-wider">RESUME</span>
                         </button>
-                        <button 
+                        <button
                             onClick={() => setSelectedGame(lastPlayed)}
-                            className="bg-white/5 hover:bg-white/10 text-white px-8 py-4 rounded-xl font-bold backdrop-blur-md border border-white/10 transition-all hover:border-white/30"
+                            className="bg-white/[0.06] hover:bg-white/10 text-white px-6 py-3 rounded-xl font-bold backdrop-blur-md border border-white/15 hover:border-white/30 transition-all text-sm tracking-wider"
                         >
                             DETAILS
                         </button>

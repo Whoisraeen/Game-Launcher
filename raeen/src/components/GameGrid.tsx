@@ -229,50 +229,36 @@ const GameGrid: React.FC = () => {
     return (
         <div className="flex-1 h-full flex flex-col overflow-hidden">
             {/* Header */}
-            <div className="flex items-center justify-between px-8 py-6">
+            <div className="flex items-center justify-between px-6 pt-4 pb-3">
                 <div className="flex items-center gap-4">
-                    <h1 className="text-3xl font-bold tracking-tight">Library</h1>
-                    <div className="flex bg-black/20 rounded-full p-1 border border-white/10">
-                        <button
-                            onClick={() => setViewMode('grid')}
-                            className={`p-2 rounded-full transition-all ${viewMode === 'grid' ? 'bg-white/10 text-white' : 'text-gray-400 hover:text-white'}`}
-                            title="Grid View"
-                        >
-                            <LayoutGrid size={18} />
-                        </button>
-                        <button
-                            onClick={() => setViewMode('list')}
-                            className={`p-2 rounded-full transition-all ${viewMode === 'list' ? 'bg-white/10 text-white' : 'text-gray-400 hover:text-white'}`}
-                            title="List View"
-                        >
-                            <ListIcon size={18} />
-                        </button>
-                        <button
-                            onClick={() => setViewMode('coverFlow')}
-                            className={`p-2 rounded-full transition-all ${viewMode === 'coverFlow' ? 'bg-white/10 text-white' : 'text-gray-400 hover:text-white'}`}
-                            title="Cover Flow View"
-                        >
-                            <Layers3 size={18} />
-                        </button>
+                    <div>
+                        <h1 className="text-3xl font-black tracking-tighter text-white drop-shadow-md">Library</h1>
+                        <p className="text-[11px] text-gray-500 uppercase tracking-[0.18em] font-bold mt-0.5">{filteredGames.length} games</p>
                     </div>
                 </div>
 
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2">
+                    <div className="flex bg-black/30 rounded-xl p-0.5 border border-white/10">
+                        <ViewToggle active={viewMode === 'grid'}      onClick={() => setViewMode('grid')}      icon={<LayoutGrid size={14} />} title="Grid" />
+                        <ViewToggle active={viewMode === 'list'}      onClick={() => setViewMode('list')}      icon={<ListIcon size={14} />}    title="List" />
+                        <ViewToggle active={viewMode === 'coverFlow'} onClick={() => setViewMode('coverFlow')} icon={<Layers3 size={14} />}     title="Cover Flow" />
+                    </div>
                     <div className="relative group">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-white transition-colors" size={18} />
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 group-focus-within:text-white transition-colors" size={14} />
                         <input
                             type="text"
-                            placeholder="Search games..."
+                            placeholder="Search games…"
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
-                            className="bg-black/20 border border-white/10 rounded-full pl-10 pr-4 py-2 w-64 text-sm focus:outline-none focus:border-white/30 focus:bg-black/40 transition-all"
+                            className="bg-black/30 border border-white/10 rounded-xl pl-9 pr-3 py-2 w-64 text-sm text-white placeholder:text-gray-500 focus:outline-none focus:border-blue-500/40 focus:ring-2 focus:ring-blue-500/20 transition-all"
                         />
                     </div>
                     <button
                         onClick={() => setShowFilterPanel(!showFilterPanel)}
-                        className={`p-2.5 rounded-full border transition-all ${showFilterPanel ? 'bg-white text-black border-white' : 'bg-black/20 border-white/10 text-gray-400 hover:text-white hover:border-white/30'}`}
+                        className={`p-2 rounded-xl border transition-all ${showFilterPanel ? 'bg-white text-black border-white' : 'bg-black/30 border-white/10 text-gray-400 hover:text-white hover:border-white/30'}`}
+                        title="Filters"
                     >
-                        <Filter size={18} />
+                        <Filter size={14} />
                     </button>
                 </div>
             </div>
@@ -307,7 +293,7 @@ const GameGrid: React.FC = () => {
             )}
 
             {/* Tabs */}
-            <div className="px-8 pb-4 flex items-center gap-2 overflow-x-auto no-scrollbar">
+            <div className="px-6 pb-4 flex items-center gap-2 overflow-x-auto no-scrollbar">
                 <Chip label="ALL GAMES" active={activeTab === 'ALL GAMES'} onClick={() => handleTabChange('ALL GAMES')} />
                 <Chip label="FAVORITES" active={activeTab === 'FAVORITES'} onClick={() => handleTabChange('FAVORITES')} />
                 <Chip label="ARCHIVED" active={activeTab === 'ARCHIVED'} onClick={() => handleTabChange('ARCHIVED')} />
@@ -383,33 +369,39 @@ const GameGrid: React.FC = () => {
                                             animate={{ opacity: 1, y: 0 }}
                                             exit={{ opacity: 0, y: -20 }}
                                             transition={{ duration: 0.2 }}
-                                            className="flex items-center gap-4 p-3 glass-card hover:bg-white/5 rounded-xl cursor-pointer group"
+                                            className="flex items-center gap-4 p-2.5 pr-4 bg-white/[0.025] hover:bg-white/[0.06] border border-white/5 hover:border-white/15 rounded-2xl cursor-pointer group transition-all"
                                             onClick={() => handleGameClick(game)}
                                             onContextMenu={(e) => handleContextMenu(e, game)}
                                         >
                                             <CachedImage
                                                 src={game.cover || ''}
                                                 alt={game.title}
-                                                className="w-16 h-24 object-cover rounded-lg"
+                                                className="w-14 h-20 object-cover rounded-lg shadow-md"
                                                 placeholderSrc="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxIDEiPjxyZWN0IHdpZHRoPSIxIiBoZWlnaHQ9IjEiIGZpbGw9IiMxZTI5M2IiLz48L3N2Zz4="
                                             />
-                                            <div className="flex-1">
-                                                <h3 className="font-bold text-lg text-white">{game.title}</h3>
-                                                <div className="flex items-center gap-2 text-sm text-gray-400">
-                                                    <img src={getPlatformIcon(game.platform)} alt={game.platform} className="w-4 h-4 invert opacity-70" />
-                                                    <span>{game.platform}</span>
-                                                    <span>•</span>
-                                                    <span>{game.playtime ? Math.round(game.playtime / 60) + 'h played' : 'Never played'}</span>
+                                            <div className="flex-1 min-w-0">
+                                                <h3 className="font-bold text-base text-white tracking-tight truncate">{game.title}</h3>
+                                                <div className="flex items-center gap-2 text-xs text-gray-400 mt-1">
+                                                    <img src={getPlatformIcon(game.platform)} alt={game.platform} className="w-3.5 h-3.5 invert opacity-70" />
+                                                    <span className="capitalize">{game.platform}</span>
+                                                    <span className="opacity-40">•</span>
+                                                    <span>{game.playtime ? Math.round(game.playtime) + 'h played' : 'Never played'}</span>
+                                                    {game.isFavorite && (
+                                                        <>
+                                                            <span className="opacity-40">•</span>
+                                                            <Heart size={11} className="text-red-400" fill="currentColor" />
+                                                        </>
+                                                    )}
                                                 </div>
                                             </div>
                                             <button
-                                                className="p-3 rounded-full bg-white text-black opacity-0 group-hover:opacity-100 transition-opacity"
+                                                className="p-2.5 rounded-full bg-white text-black opacity-0 group-hover:opacity-100 transition-opacity hover:bg-gray-100 shadow-md"
                                                 onClick={(e) => {
                                                     e.stopPropagation();
                                                     initiateLaunch(game.id);
                                                 }}
                                             >
-                                                <Play size={20} fill="currentColor" />
+                                                <Play size={16} fill="currentColor" />
                                             </button>
                                         </motion.div>
                                     ))}
@@ -521,9 +513,19 @@ const GameGrid: React.FC = () => {
 const Chip = ({ label, active = false, onClick }: { label: string, active?: boolean, onClick?: () => void }) => (
     <button
         onClick={onClick}
-        className={`px-4 py-1.5 rounded-full text-xs font-medium border transition-all whitespace-nowrap ${active ? 'bg-white/10 border-white/20 text-white shadow-[0_0_10px_rgba(255,255,255,0.1)]' : 'bg-transparent border-white/10 text-gray-400 hover:border-white/30 hover:text-white'}`}
+        className={`px-3.5 py-1.5 rounded-full text-[11px] font-bold uppercase tracking-wider border transition-all whitespace-nowrap ${active ? 'bg-white text-black border-white shadow-[0_0_16px_rgba(255,255,255,0.15)]' : 'bg-white/[0.03] border-white/10 text-gray-400 hover:border-white/30 hover:text-white hover:bg-white/5'}`}
     >
         {label}
+    </button>
+);
+
+const ViewToggle = ({ active, onClick, icon, title }: { active: boolean; onClick: () => void; icon: React.ReactNode; title: string }) => (
+    <button
+        onClick={onClick}
+        title={title}
+        className={`p-2 rounded-lg transition-all ${active ? 'bg-white/15 text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.1)]' : 'text-gray-500 hover:text-white'}`}
+    >
+        {icon}
     </button>
 );
 
@@ -552,7 +554,7 @@ const SortableGameCard = ({ game, onClick, onContextMenu, toggleFavorite, launch
             style={style}
             {...attributes}
             {...listeners}
-            className="group relative glass-card cursor-pointer touch-none h-full w-full"
+            className="group relative cursor-pointer touch-none h-full w-full rounded-2xl overflow-hidden ring-1 ring-white/5 hover:ring-white/20 hover:shadow-[0_12px_40px_-8px_rgba(0,0,0,0.6)] transition-all duration-300"
             onClick={() => onClick(game)}
             onContextMenu={(e) => onContextMenu(e, game)}
         >
@@ -560,54 +562,70 @@ const SortableGameCard = ({ game, onClick, onContextMenu, toggleFavorite, launch
                 <CachedImage
                     src={game.cover || ''}
                     alt={game.title}
-                    className="w-full h-full object-cover rounded-xl"
+                    className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-[1.04]"
                     placeholderSrc="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxIDEiPjxyZWN0IHdpZHRoPSIxIiBoZWlnaHQ9IjEiIGZpbGw9IiMxZTI5M2IiLz48L3N2Zz4="
                     draggable={false}
                 />
             ) : (
-                <div className="w-full h-full flex items-center justify-center bg-slate-700 text-gray-400 font-bold text-center p-2 rounded-xl">
+                <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-slate-700 to-slate-900 text-gray-300 font-bold text-center p-3">
                     {game.title}
                 </div>
             )}
 
-            {/* Badges Container */}
-            <div className="absolute top-2 right-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-10">
-                 {/* Merged Count Badge */}
-                {(game as any)._mergedCount > 1 && (
-                    <div className="bg-blue-600/80 backdrop-blur-md px-1.5 py-0.5 rounded-md text-[10px] font-bold text-white border border-blue-400/30 shadow-sm">
-                        +{(game as any)._mergedCount - 1}
-                    </div>
-                )}
-                
-                {/* Platform Icon Badge */}
-                <div className="bg-black/60 backdrop-blur-md p-1.5 rounded-full">
-                    <img src={getPlatformIcon(game.platform)} alt={game.platform} className="w-3 h-3 invert" />
+            {/* Always-visible bottom gradient + meta */}
+            <div className="absolute inset-x-0 bottom-0 p-3 bg-gradient-to-t from-black/95 via-black/60 to-transparent pointer-events-none">
+                <div className="text-white text-sm font-bold tracking-tight leading-tight line-clamp-2 drop-shadow">
+                    {game.title}
+                </div>
+                <div className="flex items-center gap-2 mt-1.5 text-[10px] uppercase tracking-wider text-gray-300/90">
+                    <img src={getPlatformIcon(game.platform)} alt={game.platform} className="w-3 h-3 invert opacity-80" />
+                    <span className="capitalize">{game.platform}</span>
+                    {game.playtime > 0 && (
+                        <>
+                            <span className="opacity-40">•</span>
+                            <span>{Math.round(game.playtime)}h</span>
+                        </>
+                    )}
                 </div>
             </div>
 
+            {/* Top-right badges */}
+            <div className="absolute top-2 right-2 flex items-center gap-1 z-10">
+                {(game as any)._mergedCount > 1 && (
+                    <div className="bg-blue-600/90 backdrop-blur-md px-1.5 py-0.5 rounded-md text-[10px] font-bold text-white border border-blue-400/30 shadow">
+                        +{(game as any)._mergedCount - 1}
+                    </div>
+                )}
+                {game.status === 'not_installed' && (
+                    <div className="bg-amber-600/90 backdrop-blur-md px-1.5 py-0.5 rounded-md text-[9px] font-bold text-white uppercase tracking-wider border border-amber-300/30">
+                        Not Installed
+                    </div>
+                )}
+            </div>
+
             {/* Favorite Button */}
-            <div className="absolute top-2 left-2 opacity-0 group-hover:opacity-100 transition-opacity z-10">
+            <div className={`absolute top-2 left-2 transition-opacity z-10 ${game.isFavorite ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
                 <button
-                    className={`p-1.5 rounded-full backdrop-blur-md transition-colors ${game.isFavorite ? 'bg-red-500/20 text-red-500' : 'bg-black/60 text-gray-400 hover:text-red-400'}`}
+                    className={`p-1.5 rounded-full backdrop-blur-md transition-colors ${game.isFavorite ? 'bg-red-500/30 text-red-300' : 'bg-black/50 text-gray-200 hover:text-red-300'}`}
                     onClick={(e) => {
                         e.stopPropagation();
                         toggleFavorite(game.id, !game.isFavorite);
                     }}
                 >
-                    <Heart size={14} fill={game.isFavorite ? "currentColor" : "none"} />
+                    <Heart size={13} fill={game.isFavorite ? "currentColor" : "none"} />
                 </button>
             </div>
 
-            {/* Hover Overlay */}
-            <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center rounded-xl">
+            {/* Hover Play Button */}
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                 <button
-                    className="bg-white text-black rounded-full p-3 transform scale-50 group-hover:scale-100 transition-transform duration-300 shadow-lg hover:bg-gray-200"
+                    className="pointer-events-auto bg-white/95 text-black rounded-full p-3.5 opacity-0 scale-75 group-hover:opacity-100 group-hover:scale-100 transition-all duration-300 shadow-[0_8px_24px_rgba(0,0,0,0.4)] hover:bg-white"
                     onClick={(e) => {
                         e.stopPropagation();
                         launchGame(game.id);
                     }}
                 >
-                    <Play size={20} fill="currentColor" />
+                    <Play size={18} fill="currentColor" />
                 </button>
             </div>
         </div>
