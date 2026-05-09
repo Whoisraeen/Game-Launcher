@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { X, Save, Image as ImageIcon, Folder, Star, EyeOff } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { X, Save, Image as ImageIcon, Folder, Star, EyeOff, Zap } from 'lucide-react';
 import { Game } from '../types';
 import { useGameStore } from '../stores/gameStore';
 
@@ -8,9 +8,41 @@ interface EditGameModalProps {
     onClose: () => void;
 }
 
+interface PerfProfile {
+    targetFps: number;            // 0 = uncapped
+    priority: 'normal' | 'high' | 'realtime';
+    closeBackgroundApps: boolean;
+    showOverlay: boolean;
+    enableGameMode: boolean;
+    nightMode: boolean;            // disable notifications during play
+    rgbProfile?: string;
+}
+
+const PERF_DEFAULTS: PerfProfile = {
+    targetFps: 0, priority: 'normal', closeBackgroundApps: false,
+    showOverlay: false, enableGameMode: true, nightMode: false,
+};
+const PERF_KEY = (id: string) => `raeen.gameProfile.${id}.v1`;
+
 export const EditGameModal: React.FC<EditGameModalProps> = ({ game, onClose }) => {
     const [formData, setFormData] = useState<Partial<Game>>({ ...game });
-    const [activeTab, setActiveTab] = useState<'general' | 'media' | 'advanced'>('general');
+    const [activeTab, setActiveTab] = useState<'general' | 'media' | 'performance' | 'advanced'>('general');
+    const [perf, setPerf] = useState<PerfProfile>(PERF_DEFAULTS);
+
+    useEffect(() => {
+        try {
+            const raw = localStorage.getItem(PERF_KEY(game.id));
+            if (raw) setPerf({ ...PERF_DEFAULTS, ...JSON.parse(raw) });
+        } catch {}
+    }, [game.id]);
+
+    const updatePerf = (patch: Partial<PerfProfile>) => {
+        setPerf(prev => {
+            const next = { ...prev, ...patch };
+            localStorage.setItem(PERF_KEY(game.id), JSON.stringify(next));
+            return next;
+        });
+    };
 
     const handleChange = (field: keyof Game, value: any) => {
         setFormData(prev => ({ ...prev, [field]: value }));
@@ -54,6 +86,12 @@ export const EditGameModal: React.FC<EditGameModalProps> = ({ game, onClose }) =
                         className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${activeTab === 'media' ? 'border-blue-500 text-blue-400' : 'border-transparent text-gray-400 hover:text-white'}`}
                     >
                         Media
+                    </button>
+                    <button
+                        onClick={() => setActiveTab('performance')}
+                        className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors flex items-center gap-1.5 ${activeTab === 'performance' ? 'border-blue-500 text-blue-400' : 'border-transparent text-gray-400 hover:text-white'}`}
+                    >
+                        <Zap size={14} /> Performance
                     </button>
                     <button
                         onClick={() => setActiveTab('advanced')}
@@ -225,6 +263,50 @@ export const EditGameModal: React.FC<EditGameModalProps> = ({ game, onClose }) =
                         </div>
                     )}
 
+                    {activeTab === 'performance' && (
+                        <div className="space-y-6">
+                            <p className="text-sm text-gray-400 -mt-1">Settings here apply only when launching <span className="text-white font-bold">{game.title}</span>.</p>
+
+                            <div className="grid grid-cols-2 gap-4">
+                                <PerfRow label="Target FPS" hint="0 = uncapped">
+                                    <input type="number" min={0} max={500} value={perf.targetFps}
+                                        onChange={(e) => updatePerf({ targetFps: Math.max(0, parseInt(e.target.value || '0', 10)) })}
+                                        className="w-full bg-black/20 border border-white/10 rounded-lg px-3 py-2 text-white" />
+                                </PerfRow>
+                                <PerfRow label="Process priority" hint="Higher gives the game more CPU">
+                                    <select value={perf.priority} onChange={(e) => updatePerf({ priority: e.target.value as PerfProfile['priority'] })}
+                                        className="w-full bg-black/20 border border-white/10 rounded-lg px-3 py-2 text-white">
+                                        <option value="normal">Normal</option>
+                                        <option value="high">High</option>
+                                        <option value="realtime">Realtime (use with caution)</option>
+                                    </select>
+                                </PerfRow>
+                            </div>
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                <PerfToggle label="Close background apps on launch" checked={perf.closeBackgroundApps}
+                                    onChange={(v) => updatePerf({ closeBackgroundApps: v })} />
+                                <PerfToggle label="Show performance overlay" checked={perf.showOverlay}
+                                    onChange={(v) => updatePerf({ showOverlay: v })} />
+                                <PerfToggle label="Enable Game Mode (auto-optimize)" checked={perf.enableGameMode}
+                                    onChange={(v) => updatePerf({ enableGameMode: v })} />
+                                <PerfToggle label="Do Not Disturb (silence notifications)" checked={perf.nightMode}
+                                    onChange={(v) => updatePerf({ nightMode: v })} />
+                            </div>
+
+                            <div className="space-y-2">
+                                <label className="text-sm font-medium text-gray-400">RGB lighting profile</label>
+                                <input type="text" value={perf.rgbProfile || ''}
+                                    onChange={(e) => updatePerf({ rgbProfile: e.target.value })}
+                                    placeholder="Profile name from Hardware Lab"
+                                    className="w-full bg-black/20 border border-white/10 rounded-lg px-4 py-2 text-white focus:border-blue-500 focus:outline-none" />
+                            </div>
+
+                            <button onClick={() => { localStorage.removeItem(PERF_KEY(game.id)); setPerf(PERF_DEFAULTS); }}
+                                className="text-xs text-gray-500 hover:text-red-300">Reset to defaults</button>
+                        </div>
+                    )}
+
                     {activeTab === 'advanced' && (
                         <div className="space-y-6">
                             <div className="space-y-2">
@@ -314,3 +396,21 @@ export const EditGameModal: React.FC<EditGameModalProps> = ({ game, onClose }) =
         </div>
     );
 };
+
+const PerfRow: React.FC<{ label: string; hint?: string; children: React.ReactNode }> = ({ label, hint, children }) => (
+    <div className="space-y-1.5">
+        <label className="text-sm font-medium text-gray-400">{label}</label>
+        {children}
+        {hint && <p className="text-[10px] text-gray-500 uppercase tracking-wider">{hint}</p>}
+    </div>
+);
+
+const PerfToggle: React.FC<{ label: string; checked: boolean; onChange: (v: boolean) => void }> = ({ label, checked, onChange }) => (
+    <div className="flex items-center justify-between p-3 bg-white/5 rounded-lg border border-white/10">
+        <span className="text-sm text-gray-200">{label}</span>
+        <button onClick={() => onChange(!checked)}
+            className={`w-11 h-6 rounded-full transition-colors relative ${checked ? 'bg-blue-600' : 'bg-gray-700'}`}>
+            <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-transform ${checked ? 'left-6' : 'left-1'}`} />
+        </button>
+    </div>
+);

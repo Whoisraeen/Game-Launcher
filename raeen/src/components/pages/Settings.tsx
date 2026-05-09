@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Monitor, User, Shield, Keyboard, Bell, Volume2, Database, RefreshCw, FolderOpen, Link, Zap, Palette, Upload, Image as ImageIcon } from 'lucide-react';
+import { Monitor, User, Shield, Keyboard, Bell, Volume2, Database, RefreshCw, FolderOpen, Link, Zap, Palette, Upload, Image as ImageIcon, HeartPulse, Crosshair, MonitorSmartphone, HardDrive, Target } from 'lucide-react';
 import { useSettingsStore, UserSettings } from '../../stores/settingsStore';
 import { useGameStore } from '../../stores/gameStore';
 
@@ -160,6 +160,43 @@ const Settings: React.FC = () => {
                     label="Integrations"
                     active={activeSection === 'Integrations'}
                     onClick={() => setActiveSection('Integrations')}
+                />
+                <div className="px-3 pt-4 pb-1 text-[10px] font-bold tracking-[0.18em] uppercase text-gray-600">Tools</div>
+                <SettingsNav
+                    icon={<HeartPulse size={18} />}
+                    label="Wellness"
+                    active={activeSection === 'Wellness'}
+                    onClick={() => setActiveSection('Wellness')}
+                />
+                <SettingsNav
+                    icon={<Crosshair size={18} />}
+                    label="Crosshair"
+                    active={activeSection === 'Crosshair'}
+                    onClick={() => setActiveSection('Crosshair')}
+                />
+                <SettingsNav
+                    icon={<MonitorSmartphone size={18} />}
+                    label="Drivers"
+                    active={activeSection === 'Drivers'}
+                    onClick={() => setActiveSection('Drivers')}
+                />
+                <SettingsNav
+                    icon={<HardDrive size={18} />}
+                    label="Shader Cache"
+                    active={activeSection === 'ShaderCache'}
+                    onClick={() => setActiveSection('ShaderCache')}
+                />
+                <SettingsNav
+                    icon={<Target size={18} />}
+                    label="Goals & Backlog"
+                    active={activeSection === 'GoalsBacklog'}
+                    onClick={() => setActiveSection('GoalsBacklog')}
+                />
+                <SettingsNav
+                    icon={<Keyboard size={18} />}
+                    label="Keybinds"
+                    active={activeSection === 'Keybinds'}
+                    onClick={() => setActiveSection('Keybinds')}
                 />
             </div>
 
@@ -633,8 +670,16 @@ const Settings: React.FC = () => {
                 )}
 
 
-                {/* Placeholder for other sections */}
-                {!['General', 'Library', 'Account', 'Integrations'].includes(activeSection) && (
+                {activeSection === 'Notifications' && <NotificationsSection />}
+                {activeSection === 'Wellness' && <WellnessSection />}
+                {activeSection === 'Crosshair' && <CrosshairSection />}
+                {activeSection === 'Drivers' && <DriversSection />}
+                {activeSection === 'ShaderCache' && <ShaderCacheSection />}
+                {activeSection === 'GoalsBacklog' && <GoalsBacklogSection />}
+                {activeSection === 'Keybinds' && <KeybindsSection />}
+
+                {/* Placeholder for any remaining sections */}
+                {!['General','Library','Account','Integrations','Appearance','Notifications','Wellness','Crosshair','Drivers','ShaderCache','GoalsBacklog','Keybinds','Performance','Privacy & Security','Input & Hotkeys','Audio','Emulation'].includes(activeSection) && (
                     <div className="flex items-center justify-center h-64 text-gray-500">
                         Section under construction
                     </div>
@@ -643,6 +688,204 @@ const Settings: React.FC = () => {
         </div>
     );
 };
+
+// ===== Tool / preference sections (read/write same localStorage as feature pages) =====
+
+const useLocalSettings = <T,>(key: string, defaults: T): [T, (patch: Partial<T>) => void] => {
+    const [value, setValue] = useState<T>(() => {
+        try { const raw = localStorage.getItem(key); return raw ? { ...defaults, ...JSON.parse(raw) } : defaults; } catch { return defaults; }
+    });
+    useEffect(() => { try { localStorage.setItem(key, JSON.stringify(value)); } catch {} }, [key, value]);
+    const update = (patch: Partial<T>) => setValue((prev: any) => ({ ...prev, ...patch }));
+    return [value, update];
+};
+
+const NotificationsSection: React.FC = () => {
+    const [prefs, update] = useLocalSettings('raeen.notifications.v1', {
+        gameUpdates: true,
+        friendOnline: true,
+        friendInvite: true,
+        priceAlerts: true,
+        achievementUnlocked: true,
+        gameCrash: true,
+        wellnessReminders: true,
+        cloudSyncDone: false,
+        sound: true,
+    });
+    const requestSystem = () => 'Notification' in window && Notification.permission === 'default' && Notification.requestPermission();
+    return (
+        <div>
+            <h2 className="text-2xl font-bold text-white mb-6">Notifications</h2>
+            <div className="space-y-6">
+                <SettingGroup title="What to notify me about">
+                    <Toggle label="Game updates available"  checked={prefs.gameUpdates}        onChange={(v) => update({ gameUpdates: v })} />
+                    <Toggle label="Friend comes online"     checked={prefs.friendOnline}       onChange={(v) => update({ friendOnline: v })} />
+                    <Toggle label="Friend invites / messages" checked={prefs.friendInvite}     onChange={(v) => update({ friendInvite: v })} />
+                    <Toggle label="Wishlist price drops"    checked={prefs.priceAlerts}        onChange={(v) => update({ priceAlerts: v })} />
+                    <Toggle label="Achievement unlocked"    checked={prefs.achievementUnlocked} onChange={(v) => update({ achievementUnlocked: v })} />
+                    <Toggle label="Game crashes"            checked={prefs.gameCrash}          onChange={(v) => update({ gameCrash: v })} />
+                    <Toggle label="Wellness reminders"      checked={prefs.wellnessReminders}  onChange={(v) => update({ wellnessReminders: v })} />
+                    <Toggle label="Cloud sync completed"    checked={prefs.cloudSyncDone}      onChange={(v) => update({ cloudSyncDone: v })} />
+                </SettingGroup>
+                <SettingGroup title="Delivery">
+                    <Toggle label="Play sound on notification" checked={prefs.sound} onChange={(v) => update({ sound: v })} />
+                    <button onClick={requestSystem} className="mt-3 px-4 py-2 bg-white/10 hover:bg-white/20 rounded-lg text-sm font-bold text-white transition">
+                        {('Notification' in window && Notification.permission === 'granted') ? 'System notifications enabled' : 'Enable system notifications'}
+                    </button>
+                </SettingGroup>
+            </div>
+        </div>
+    );
+};
+
+const WellnessSection: React.FC = () => {
+    const [s, update] = useLocalSettings('raeen.wellness.v1', {
+        breakReminders: true, breakIntervalMin: 60,
+        postureReminders: true, postureIntervalMin: 45,
+        eyeStrain: true, eyeStrainIntervalMin: 20,
+        hydrationReminders: false, hydrationIntervalMin: 90,
+        hardLimit: false, hardLimitMinutes: 240, warnAtMinutes: 210,
+    });
+    return (
+        <div>
+            <h2 className="text-2xl font-bold text-white mb-6">Wellness Reminders</h2>
+            <div className="space-y-6">
+                <SettingGroup title="Break reminders">
+                    <Toggle label="Take a break" checked={s.breakReminders} onChange={(v) => update({ breakReminders: v })} />
+                    <NumberField label="Every (min)" value={s.breakIntervalMin} min={15} max={180} onChange={(v) => update({ breakIntervalMin: v })} disabled={!s.breakReminders} />
+                </SettingGroup>
+                <SettingGroup title="Posture & eye strain">
+                    <Toggle label="Posture check"  checked={s.postureReminders} onChange={(v) => update({ postureReminders: v })} />
+                    <NumberField label="Every (min)" value={s.postureIntervalMin} min={15} max={180} onChange={(v) => update({ postureIntervalMin: v })} disabled={!s.postureReminders} />
+                    <Toggle label="20-20-20 eye strain" checked={s.eyeStrain} onChange={(v) => update({ eyeStrain: v })} />
+                    <NumberField label="Every (min)" value={s.eyeStrainIntervalMin} min={10} max={60} onChange={(v) => update({ eyeStrainIntervalMin: v })} disabled={!s.eyeStrain} />
+                </SettingGroup>
+                <SettingGroup title="Hydration">
+                    <Toggle label="Hydration reminder" checked={s.hydrationReminders} onChange={(v) => update({ hydrationReminders: v })} />
+                    <NumberField label="Every (min)" value={s.hydrationIntervalMin} min={30} max={240} onChange={(v) => update({ hydrationIntervalMin: v })} disabled={!s.hydrationReminders} />
+                </SettingGroup>
+                <SettingGroup title="Daily session limit">
+                    <Toggle label="Enforce hard limit" checked={s.hardLimit} onChange={(v) => update({ hardLimit: v })} />
+                    <NumberField label="Warn at (min)" value={s.warnAtMinutes} min={30} max={600} onChange={(v) => update({ warnAtMinutes: v })} disabled={!s.hardLimit} />
+                    <NumberField label="Hard limit (min)" value={s.hardLimitMinutes} min={30} max={720} onChange={(v) => update({ hardLimitMinutes: v })} disabled={!s.hardLimit} />
+                </SettingGroup>
+            </div>
+        </div>
+    );
+};
+
+const CrosshairSection: React.FC = () => {
+    const [data] = useLocalSettings('raeen.crosshair.v1', { profiles: [{ id: 'default', name: 'Default', shape: 'plus', color: '#00ff88', showOnDesktop: false }], activeId: 'default' });
+    const active = data.profiles?.find((p: any) => p.id === data.activeId);
+    return (
+        <div>
+            <h2 className="text-2xl font-bold text-white mb-6">Crosshair Overlay</h2>
+            <div className="space-y-4 text-sm text-gray-300">
+                <p>Crosshair profile: <span className="font-bold text-white">{active?.name || 'None'}</span></p>
+                <p>Currently {active?.showOnDesktop ? <span className="text-green-400 font-bold">overlay active</span> : <span className="text-gray-400">overlay disabled</span>}.</p>
+                <a href="#" onClick={(e) => { e.preventDefault(); window.dispatchEvent(new CustomEvent('settings:goto-crosshair')); }}
+                   className="inline-block px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg font-bold text-white">
+                    Open Crosshair Designer →
+                </a>
+            </div>
+        </div>
+    );
+};
+
+const DriversSection: React.FC = () => {
+    const [auto, setAuto] = useState(localStorage.getItem('raeen.drivers.auto') === 'true');
+    useEffect(() => { localStorage.setItem('raeen.drivers.auto', String(auto)); }, [auto]);
+    return (
+        <div>
+            <h2 className="text-2xl font-bold text-white mb-6">Driver Updates</h2>
+            <div className="space-y-6">
+                <SettingGroup title="Automation">
+                    <Toggle label="Auto-update gaming drivers (GPU/chipset)" checked={auto} onChange={setAuto} />
+                </SettingGroup>
+                <a href="#" onClick={(e) => { e.preventDefault(); window.dispatchEvent(new CustomEvent('settings:goto-drivers')); }}
+                   className="inline-block px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg font-bold text-white">
+                    Open Driver Manager →
+                </a>
+            </div>
+        </div>
+    );
+};
+
+const ShaderCacheSection: React.FC = () => (
+    <div>
+        <h2 className="text-2xl font-bold text-white mb-6">Shader Cache</h2>
+        <p className="text-sm text-gray-400 mb-4">Open the dedicated tool to scan, repair, or clear per-game shader caches.</p>
+        <a href="#" onClick={(e) => { e.preventDefault(); window.dispatchEvent(new CustomEvent('settings:goto-shadercache')); }}
+           className="inline-block px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg font-bold text-white">
+            Open Shader Cache Manager →
+        </a>
+    </div>
+);
+
+const GoalsBacklogSection: React.FC = () => {
+    const goalsCount = (() => { try { return JSON.parse(localStorage.getItem('raeen.goals.v1') || '[]').length; } catch { return 0; } })();
+    const backlogCount = (() => { try { return JSON.parse(localStorage.getItem('raeen.backlog.v1') || '[]').length; } catch { return 0; } })();
+    const clearAllGoals = () => { if (confirm('Clear all playtime goals?')) localStorage.removeItem('raeen.goals.v1'); };
+    const clearAllBacklog = () => { if (confirm('Clear backlog?')) localStorage.removeItem('raeen.backlog.v1'); };
+    return (
+        <div>
+            <h2 className="text-2xl font-bold text-white mb-6">Goals & Backlog</h2>
+            <div className="space-y-6">
+                <SettingGroup title="Stored data">
+                    <div className="flex items-center justify-between py-2">
+                        <span className="text-sm text-gray-300">{goalsCount} active playtime goals</span>
+                        <button onClick={clearAllGoals} className="px-3 py-1.5 text-xs font-bold rounded bg-red-500/15 hover:bg-red-500/30 text-red-300">Clear all</button>
+                    </div>
+                    <div className="flex items-center justify-between py-2">
+                        <span className="text-sm text-gray-300">{backlogCount} backlog entries</span>
+                        <button onClick={clearAllBacklog} className="px-3 py-1.5 text-xs font-bold rounded bg-red-500/15 hover:bg-red-500/30 text-red-300">Clear all</button>
+                    </div>
+                </SettingGroup>
+            </div>
+        </div>
+    );
+};
+
+const KeybindsSection: React.FC = () => {
+    const binds: { combo: string; action: string }[] = [
+        { combo: 'Ctrl + K',     action: 'Open Command Palette' },
+        { combo: 'Ctrl + ,',     action: 'Open Settings' },
+        { combo: 'Ctrl + B',     action: 'Open Backlog' },
+        { combo: 'Alt + 1',      action: 'Library' },
+        { combo: 'Alt + 2',      action: 'Backlog' },
+        { combo: 'Alt + 3',      action: 'Smart Dashboard' },
+        { combo: 'Alt + 4',      action: 'Friends' },
+        { combo: 'Alt + 5',      action: 'Analytics' },
+        { combo: 'Alt + 6',      action: 'Hardware Lab' },
+        { combo: 'F11',          action: 'Toggle Big Picture mode' },
+        { combo: '↑ / ↓',        action: 'Navigate command palette' },
+        { combo: 'Enter',        action: 'Run highlighted action' },
+        { combo: 'Esc',          action: 'Close palette / modal' },
+    ];
+    return (
+        <div>
+            <h2 className="text-2xl font-bold text-white mb-6">Keyboard Shortcuts</h2>
+            <p className="text-sm text-gray-400 mb-6">Built-in shortcuts. Custom remapping coming soon.</p>
+            <div className="bg-black/20 border border-white/10 rounded-2xl divide-y divide-white/5">
+                {binds.map(b => (
+                    <div key={b.combo} className="flex items-center justify-between px-4 py-3">
+                        <span className="text-sm text-gray-300">{b.action}</span>
+                        <kbd className="font-mono text-xs bg-white/8 border border-white/15 text-white px-2 py-1 rounded">{b.combo}</kbd>
+                    </div>
+                ))}
+            </div>
+        </div>
+    );
+};
+
+const NumberField: React.FC<{ label: string; value: number; min: number; max: number; onChange: (v: number) => void; disabled?: boolean }> = ({ label, value, min, max, onChange, disabled }) => (
+    <div className={`flex items-center justify-between py-2 ${disabled ? 'opacity-50' : ''}`}>
+        <label className="text-sm text-gray-300">{label}</label>
+        <input type="number" min={min} max={max} value={value} disabled={disabled}
+            onChange={(e) => onChange(Math.max(min, Math.min(max, parseInt(e.target.value || '0', 10))))}
+            className="w-24 bg-black/30 border border-white/10 rounded-lg px-2 py-1 text-white text-sm" />
+    </div>
+);
 
 const SettingsNav = ({ icon, label, active, onClick }: { icon: React.ReactNode, label: string, active?: boolean, onClick?: () => void }) => (
     <div

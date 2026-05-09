@@ -46,5 +46,86 @@ export class FriendsController {
                 return [];
             }
         });
+
+        ipcMain.handle('friends:sync', async () => {
+            try {
+                return await this.friendsManager.syncSteamFriendsRealTime();
+            } catch (error) {
+                console.error('Failed to sync friends:', error);
+                return [];
+            }
+        });
+
+        ipcMain.handle('friends:simulate', () => {
+            try {
+                return this.friendsManager.simulateActivity();
+            } catch (error) {
+                console.error('Failed to simulate activity:', error);
+                return [];
+            }
+        });
+
+        ipcMain.handle('friends:getMessages', (_, friendId: string) => {
+            try {
+                return this.friendsManager.getMessages(friendId);
+            } catch (error) {
+                console.error('Failed to get messages:', error);
+                return [];
+            }
+        });
+
+        ipcMain.handle('friends:sendMessage', (_, friendId: string, content: string) => {
+            try {
+                return this.friendsManager.sendMessage(friendId, content, 'me');
+            } catch (error) {
+                console.error('Failed to send message:', error);
+                throw error;
+            }
+        });
+
+        ipcMain.handle('friends:markRead', (_, friendId: string) => {
+            try {
+                return this.friendsManager.markRead(friendId);
+            } catch (error) {
+                console.error('Failed to mark read:', error);
+                return false;
+            }
+        });
+
+        ipcMain.handle('friends:getActivity', () => {
+            try {
+                return this.friendsManager.getActivityFeed();
+            } catch (error) {
+                console.error('Failed to get activity feed:', error);
+                return [];
+            }
+        });
+
+        ipcMain.handle('friends:shareCollection', (_, collectionId: string, friendIds: string[]) => {
+            try {
+                return this.friendsManager.shareCollection(collectionId, friendIds);
+            } catch (error) {
+                console.error('Failed to share collection:', error);
+                throw error;
+            }
+        });
+
+        ipcMain.handle('friends:getSharedCollections', () => {
+            try {
+                return this.friendsManager.getSharedCollections();
+            } catch (error) {
+                console.error('Failed to get shared collections:', error);
+                return [];
+            }
+        });
+
+        ipcMain.handle('friends:importSharedCollection', (_, sharedId: string) => {
+            try {
+                return this.friendsManager.importSharedCollection(sharedId);
+            } catch (error) {
+                console.error('Failed to import shared collection:', error);
+                throw error;
+            }
+        });
     }
 }

@@ -184,5 +184,22 @@ export class GameController {
         ipcMain.handle('collections:removeGame', async (_, collectionId: string, gameId: string) => {
              return await this.gameManager.removeGameFromCollection(collectionId, gameId);
         });
+
+        // --- Game Reviews & Session Notes ---
+        ipcMain.handle('reviews:getAll', (_, gameId?: string) => {
+            return this.gameManager.getReviews(gameId);
+        });
+
+        ipcMain.handle('reviews:add', (_, review: { gameId: string; title: string; content: string; rating: number; sessionHours?: number; mood?: string }) => {
+            return this.gameManager.addReview(review);
+        });
+
+        ipcMain.handle('reviews:update', (_, reviewId: string, updates: Partial<{ title: string; content: string; rating: number; mood: string }>) => {
+            return this.gameManager.updateReview(reviewId, updates);
+        });
+
+        ipcMain.handle('reviews:delete', (_, reviewId: string) => {
+            return this.gameManager.deleteReview(reviewId);
+        });
     }
 }

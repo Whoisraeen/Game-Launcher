@@ -43,15 +43,42 @@ import AimTrainer from './components/pages/AimTrainer';
 import CrosshairOverlay from './components/pages/CrosshairOverlay';
 import Wellness from './components/pages/Wellness';
 import Rotation from './components/pages/RotationScheduler';
+import Reviews from './components/pages/Reviews';
+import CommandPalette from './components/CommandPalette';
 
-
+const RECENT_KEY = 'raeen.recentPages.v1';
+const SECTION_HOTKEYS: Record<string, string> = {
+  '1': 'Library',
+  '2': 'Backlog',
+  '3': 'SmartDashboard',
+  '4': 'Friends',
+  '5': 'Analytics',
+  '6': 'HardwareLab',
+};
 
 function App() {
   const [activePage, setActivePage] = useState('Library');
   const [isBigPicture, setIsBigPicture] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(false);
   const { settings, loadSettings } = useSettingsStore();
   const { loadGames, initializeListeners } = useGameStore();
   const { toggleOverlay, isOverlayVisible } = usePerformanceStore();
+
+  // Track recently visited pages
+  const recordRecent = (page: string) => {
+    try {
+      const raw = localStorage.getItem(RECENT_KEY);
+      const list: string[] = raw ? JSON.parse(raw) : [];
+      const next = [page, ...list.filter(p => p !== page)].slice(0, 6);
+      localStorage.setItem(RECENT_KEY, JSON.stringify(next));
+      window.dispatchEvent(new CustomEvent('raeen:recent-updated'));
+    } catch {}
+  };
+
+  const handleNavigate = (page: string) => {
+    recordRecent(page);
+    setActivePage(page);
+  };
 
   // Check for Overlay Window Mode
   if (window.location.hash === '#overlay') {
@@ -64,6 +91,62 @@ function App() {
     loadSettings();
     loadGames();
     initializeListeners();
+  }, []);
+
+  // Global keyboard shortcuts
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      const inField = ['INPUT', 'TEXTAREA'].includes((e.target as HTMLElement)?.tagName) ||
+                       (e.target as HTMLElement)?.isContentEditable;
+
+      // Ctrl/Cmd + K: Command Palette (works even in fields)
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setPaletteOpen(o => !o);
+        return;
+      }
+      if (inField) return;
+
+      // Ctrl/Cmd + ,: Settings
+      if ((e.ctrlKey || e.metaKey) && e.key === ',') {
+        e.preventDefault();
+        handleNavigate('Settings');
+        return;
+      }
+      // Ctrl/Cmd + B: Backlog
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'b') {
+        e.preventDefault();
+        handleNavigate('Backlog');
+        return;
+      }
+      // Alt + 1..6: section hotkeys
+      if (e.altKey && SECTION_HOTKEYS[e.key]) {
+        e.preventDefault();
+        handleNavigate(SECTION_HOTKEYS[e.key]);
+        return;
+      }
+      // F11: Big Picture
+      if (e.key === 'F11') {
+        e.preventDefault();
+        setIsBigPicture(p => !p);
+      }
+    };
+    window.addEventListener('keydown', handler);
+
+    // Settings → tool deeplinks
+    const goCrosshair = () => handleNavigate('Crosshair');
+    const goDrivers = () => handleNavigate('Drivers');
+    const goShader = () => handleNavigate('ShaderCache');
+    window.addEventListener('settings:goto-crosshair', goCrosshair);
+    window.addEventListener('settings:goto-drivers', goDrivers);
+    window.addEventListener('settings:goto-shadercache', goShader);
+
+    return () => {
+      window.removeEventListener('keydown', handler);
+      window.removeEventListener('settings:goto-crosshair', goCrosshair);
+      window.removeEventListener('settings:goto-drivers', goDrivers);
+      window.removeEventListener('settings:goto-shadercache', goShader);
+    };
   }, []);
 
   const handleMinimize = () => {
@@ -81,7 +164,7 @@ function App() {
   const renderPage = () => {
     switch (activePage) {
       case 'Library': return <Library />;
-      case 'Collections': return <Collections onNavigate={setActivePage} />;
+      case 'Collections': return <Collections onNavigate={handleNavigate} />;
       case 'Wishlist': return <Wishlist />;
       case 'Store': return <Store />;
       case 'Friends': return <Friends />;
@@ -101,6 +184,7 @@ function App() {
       case 'Drivers': return <DriverUpdater />;
       case 'AimTrainer': return <AimTrainer />;
       case 'Crosshair': return <CrosshairOverlay />;
+      case 'Reviews': return <Reviews />;
       case 'Wellness': return <Wellness />;
       case 'SaveManager': return <SaveManager />;
       case 'Studio': return <Studio />;
@@ -148,11 +232,19 @@ function App() {
             </div>
             <div className="flex items-center gap-1 no-drag">
               <div className="px-2"><SystemStatus /></div>
+              <button
+                onClick={() => setPaletteOpen(true)}
+                title="Command Palette (Ctrl+K)"
+                className="hidden md:flex items-center gap-2 px-2.5 py-1 text-[11px] text-gray-400 hover:text-white bg-white/[0.03] hover:bg-white/[0.07] border border-white/10 hover:border-white/20 rounded-md transition-colors"
+              >
+                <span>Search</span>
+                <kbd className="font-mono text-[10px] bg-white/5 border border-white/10 px-1 rounded">Ctrl K</kbd>
+              </button>
               <TopBarBtn onClick={() => setIsBigPicture(true)} title="Enter Big Picture Mode" icon={<MonitorPlay size={14} />} />
               <TopBarBtn onClick={toggleOverlay} title="Toggle Performance Overlay"
                 icon={<Activity size={14} />} active={isOverlayVisible} />
               <TopBarBtn title="Notifications" icon={<Bell size={14} />} />
-              <TopBarBtn onClick={() => setActivePage('Settings')} title="Settings" icon={<SettingsIcon size={14} />} />
+              <TopBarBtn onClick={() => handleNavigate('Settings')} title="Settings" icon={<SettingsIcon size={14} />} />
               <div className="flex gap-1.5 ml-3 pl-3 border-l border-white/10">
                 <button onClick={handleMinimize} aria-label="Minimize" className="w-3 h-3 rounded-full bg-yellow-500/30 hover:bg-yellow-400 border border-yellow-500/40 transition-colors" />
                 <button onClick={handleMaximize} aria-label="Maximize" className="w-3 h-3 rounded-full bg-green-500/30 hover:bg-green-400 border border-green-500/40 transition-colors" />
@@ -163,7 +255,7 @@ function App() {
 
           {/* Main Content */}
           <div className="relative z-10 flex flex-1 overflow-hidden p-6 gap-6">
-            <Sidebar activePage={activePage} onNavigate={setActivePage} />
+            <Sidebar activePage={activePage} onNavigate={handleNavigate} />
 
             <main className="flex-1 flex flex-col h-full min-w-0 overflow-hidden gap-6">
               {renderPage()}
@@ -174,6 +266,13 @@ function App() {
           <Overlay />
           <UpdatesWidget />
           <CloudSyncWidget />
+          <CommandPalette
+            open={paletteOpen}
+            onClose={() => setPaletteOpen(false)}
+            onNavigate={handleNavigate}
+            onToggleBigPicture={() => setIsBigPicture(p => !p)}
+            onToggleOverlay={toggleOverlay}
+          />
         </div>
       )}
     </NavigationProvider>

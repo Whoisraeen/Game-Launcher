@@ -834,4 +834,145 @@ export class GameManager extends EventEmitter {
     getEmulators() {
         return this.scanner.emulationService.getEmulators();
     }
+
+    // --- Game Reviews & Session Notes ---
+
+    getReviews(gameId?: string): GameReview[] {
+        const db = getDb();
+        this.ensureReviewsTable(db);
+
+        let rows: any[];
+        if (gameId) {
+            rows = db.prepare(`
+                SELECT r.*, g.title as game_title, g.cover_url as game_cover
+                FROM game_reviews r
+                LEFT JOIN games g ON r.game_id = g.id
+                WHERE r.game_id = ?
+                ORDER BY r.created_at DESC
+            `).all(gameId);
+        } else {
+            rows = db.prepare(`
+                SELECT r.*, g.title as game_title, g.cover_url as game_cover
+                FROM game_reviews r
+                LEFT JOIN games g ON r.game_id = g.id
+                ORDER BY r.created_at DESC
+            `).all();
+        }
+
+        return rows.map((r: any) => ({
+            id: r.id,
+            gameId: r.game_id,
+            gameTitle: r.game_title || 'Unknown',
+            gameCover: r.game_cover,
+            title: r.title,
+            content: r.content,
+            rating: r.rating,
+            sessionHours: r.session_hours,
+            mood: r.mood,
+            createdAt: r.created_at,
+            updatedAt: r.updated_at,
+        }));
+    }
+
+    addReview(review: { gameId: string; title: string; content: string; rating: number; sessionHours?: number; mood?: string }): GameReview {
+        const db = getDb();
+        this.ensureReviewsTable(db);
+
+        const { v4: uuidv4 } = require('uuid');
+        const id = uuidv4();
+        const now = Date.now();
+
+        db.prepare(`
+            INSERT INTO game_reviews (id, game_id, title, content, rating, session_hours, mood, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(id, review.gameId, review.title, review.content, review.rating, review.sessionHours || null, review.mood || null, now, now);
+
+        const game = db.prepare('SELECT title, cover_url FROM games WHERE id = ?').get(review.gameId) as any;
+
+        return {
+            id,
+            gameId: review.gameId,
+            gameTitle: game?.title || 'Unknown',
+            gameCover: game?.cover_url,
+            title: review.title,
+            content: review.content,
+            rating: review.rating,
+            sessionHours: review.sessionHours,
+            mood: review.mood,
+            createdAt: now,
+            updatedAt: now,
+        };
+    }
+
+    updateReview(reviewId: string, updates: Partial<{ title: string; content: string; rating: number; mood: string }>): boolean {
+        const db = getDb();
+
+        const setClauses: string[] = [];
+        const values: any[] = [];
+
+        if (updates.title !== undefined) { setClauses.push('title = ?'); values.push(updates.title); }
+        if (updates.content !== undefined) { setClauses.push('content = ?'); values.push(updates.content); }
+        if (updates.rating !== undefined) { setClauses.push('rating = ?'); values.push(updates.rating); }
+        if (updates.mood !== undefined) { setClauses.push('mood = ?'); values.push(updates.mood); }
+
+        if (setClauses.length === 0) return false;
+
+        setClauses.push('updated_at = ?');
+        values.push(Date.now());
+        values.push(reviewId);
+
+        db.prepare(`UPDATE game_reviews SET ${setClauses.join(', ')} WHERE id = ?`).run(...values);
+        return true;
+    }
+
+    deleteReview(reviewId: string): boolean {
+        const db = getDb();
+        db.prepare('DELETE FROM game_reviews WHERE id = ?').run(reviewId);
+        return true;
+    }
+
+    private ensureReviewsTable(db: any) {
+        db.exec(`
+            CREATE TABLE IF NOT EXISTS game_reviews (
+                id TEXT PRIMARY KEY,
+                game_id TEXT NOT NULL,
+                title TEXT NOT NULL,
+                content TEXT NOT NULL,
+                rating INTEGER DEFAULT 0,
+                session_hours REAL,
+                mood TEXT,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL,
+                FOREIGN KEY (game_id) REFERENCES games(id) ON DELETE CASCADE
+            )
+        `);
+    }
+}
+
+export interface GameReview {
+    id: string;
+    gameId: string;
+    gameTitle: string;
+    gameCover?: string;
+    title: string;
+    content: string;
+    rating: number;
+    sessionHours?: number;
+    mood?: string;
+    createdAt: number;
+    updatedAt: number;
+}
+
+export interface GameReview {
+    id: string;
+    gameId: string;
+    gameTitle: string;
+    gameCover?: string;
+    title: string;
+    content: string;
+    rating: number;
+    sessionHours?: number;
+    mood?: string;
+    createdAt: number;
+    updatedAt: number;
 }

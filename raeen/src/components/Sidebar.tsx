@@ -31,7 +31,10 @@ import {
     HeartPulse,
     Search,
     ChevronDown,
+    Clock,
 } from 'lucide-react';
+
+const RECENT_KEY = 'raeen.recentPages.v1';
 
 import { useSettingsStore } from '../stores/settingsStore';
 import { useGameStore } from '../stores/gameStore';
@@ -57,9 +60,25 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage, onNavigate }) => {
     const [showDecisionHelper, setShowDecisionHelper] = useState(false);
     const [search, setSearch] = useState('');
     const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+    const [recents, setRecents] = useState<string[]>([]);
 
     useEffect(() => {
         loadCollections();
+        const load = () => {
+            try {
+                const raw = localStorage.getItem(RECENT_KEY);
+                setRecents(raw ? JSON.parse(raw) : []);
+            } catch { setRecents([]); }
+        };
+        load();
+        const onUpdate = () => load();
+        window.addEventListener('raeen:recent-updated', onUpdate);
+        const dh = () => setShowDecisionHelper(true);
+        window.addEventListener('open-decision-helper', dh);
+        return () => {
+            window.removeEventListener('raeen:recent-updated', onUpdate);
+            window.removeEventListener('open-decision-helper', dh);
+        };
     }, []);
 
     const sections: NavSection[] = useMemo(() => ([
@@ -76,6 +95,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage, onNavigate }) => {
             id: 'social', title: 'Social', items: [
                 { key: 'Friends',     label: 'Friends',     icon: <Users size={18} />, badge: '3' },
                 { key: 'SocialHub',   label: 'Social Hub',  icon: <MessagesSquare size={18} /> },
+                { key: 'Reviews',     label: 'Reviews',     icon: <Sparkles size={18} /> },
                 { key: 'News',        label: 'News',        icon: <Newspaper size={18} /> },
             ],
         },
@@ -198,6 +218,27 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage, onNavigate }) => {
                 </button>
 
                 <div className="flex-1 overflow-y-auto custom-scrollbar -mr-1 pr-1 space-y-3">
+                    {/* Recents */}
+                    {!search && recents.length > 1 && (
+                        <div>
+                            <div className="flex items-center gap-1.5 px-3 mb-1 text-[10px] font-bold text-gray-500 uppercase tracking-[0.15em]">
+                                <Clock size={10} /> Recent
+                            </div>
+                            <div className="flex flex-wrap gap-1 px-2">
+                                {recents.slice(0, 5).filter(p => p !== activePage).slice(0, 4).map(page => (
+                                    <button
+                                        key={page}
+                                        onClick={() => onNavigate(page)}
+                                        className="text-[11px] px-2 py-1 rounded-md bg-white/[0.03] hover:bg-white/[0.08] text-gray-300 hover:text-white border border-white/5 hover:border-white/15 transition truncate max-w-[90px]"
+                                        title={page}
+                                    >
+                                        {page}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
                     {/* All Games + Collections (always pinned) */}
                     {!search && (
                         <div className="space-y-1">

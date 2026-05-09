@@ -441,4 +441,271 @@ export class FriendsManager {
         db.prepare('UPDATE friend_messages SET is_read = 1 WHERE friend_id = ?').run(friendId);
         return true;
     }
+
+    /**
+     * Get a unified activity feed across all friends/platforms.
+     * Combines status changes, game sessions, and achievements.
+     */
+    getActivityFeed(): ActivityEvent[] {
+        const db = getDb();
+        const events: ActivityEvent[] = [];
+
+        // Get friends currently playing
+        const playing = db.prepare(
+            `SELECT id, username, avatar_url, activity, platform, last_seen
+             FROM friends WHERE status = 'playing' AND activity IS NOT NULL
+             ORDER BY last_seen DESC`
+        ).all() as any[];
+
+        playing.forEach((f: any) => {
+            events.push({
+                id: `playing-${f.id}`,
+                type: 'playing',
+                friendId: f.id,
+                friendName: f.username,
+                friendAvatar: f.avatar_url,
+                platform: f.platform,
+                detail: f.activity,
+                timestamp: f.last_seen || new Date().toISOString(),
+            });
+        });
+
+        // Get friends who came online recently
+        const online = db.prepare(
+            `SELECT id, username, avatar_url, platform, last_seen
+             FROM friends WHERE status = 'online'
+             ORDER BY last_seen DESC LIMIT 10`
+        ).all() as any[];
+
+        online.forEach((f: any) => {
+            events.push({
+                id: `online-${f.id}`,
+                type: 'online',
+                friendId: f.id,
+                friendName: f.username,
+                friendAvatar: f.avatar_url,
+                platform: f.platform,
+                detail: null,
+                timestamp: f.last_seen || new Date().toISOString(),
+            });
+        });
+
+        // Get recent achievement unlocks (cross-platform)
+        const achievements = db.prepare(
+            `SELECT a.id, a.name as achievement_name, a.icon_url, a.unlock_time, a.platform,
+                    g.title as game_title
+             FROM achievements a
+             JOIN games g ON a.game_id = g.id
+             WHERE a.unlocked = 1 AND a.unlock_time IS NOT NULL
+             ORDER BY a.unlock_time DESC LIMIT 20`
+        ).all() as any[];
+
+        achievements.forEach((a: any) => {
+            events.push({
+                id: `achievement-${a.id}`,
+                type: 'achievement',
+                friendId: 'self',
+                friendName: 'You',
+                friendAvatar: a.icon_url || '',
+                platform: a.platform,
+                detail: `Unlocked "${a.achievement_name}" in ${a.game_title}`,
+                timestamp: a.unlock_time ? new Date(a.unlock_time).toISOString() : new Date().toISOString(),
+            });
+        });
+
+        // Get recent messages as activity
+        const recentMessages = db.prepare(
+            `SELECT m.id, m.friend_id, m.sender, m.content, m.timestamp,
+                    f.username, f.avatar_url
+             FROM friend_messages m
+             JOIN friends f ON m.friend_id = f.id
+             WHERE m.sender != 'me'
+             ORDER BY m.timestamp DESC LIMIT 10`
+        ).all() as any[];
+
+        recentMessages.forEach((m: any) => {
+            events.push({
+                id: `message-${m.id}`,
+                type: 'message',
+                friendId: m.friend_id,
+                friendName: m.username,
+                friendAvatar: m.avatar_url,
+                platform: 'raeen',
+                detail: m.content,
+                timestamp: new Date(m.timestamp).toISOString(),
+            });
+        });
+
+        // Sort all events by timestamp descending
+        events.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+
+        return events.slice(0, 50);
+    }
+
+    /**
+     * Share a collection with friends by storing it in the shared_collections table
+     */
+    shareCollection(collectionId: string, friendIds: string[]): SharedCollection {
+        const db = getDb();
+        
+        // Ensure shared_collections table exists
+        db.exec(`
+            CREATE TABLE IF NOT EXISTS shared_collections (
+                id TEXT PRIMARY KEY,
+                collection_id TEXT NOT NULL,
+                collection_name TEXT NOT NULL,
+                shared_by TEXT NOT NULL,
+                shared_with TEXT NOT NULL,
+                game_titles TEXT NOT NULL,
+                game_ids TEXT NOT NULL,
+                message TEXT,
+                created_at INTEGER NOT NULL,
+                FOREIGN KEY (collection_id) REFERENCES collections(id)
+            )
+        `);
+
+        const collection = db.prepare('SELECT * FROM collections WHERE id = ?').get(collectionId) as any;
+        if (!collection) throw new Error('Collection not found');
+
+        const gameRows = db.prepare(
+            'SELECT g.id, g.title FROM collection_games cg JOIN games g ON cg.game_id = g.id WHERE cg.collection_id = ?'
+        ).all(collectionId) as any[];
+
+        const settingsRow = db.prepare("SELECT value FROM settings WHERE key = 'account'").get() as any;
+        let username = 'Me';
+        if (settingsRow) {
+            try {
+                const account = JSON.parse(settingsRow.value);
+                username = account.username || 'Me';
+            } catch {}
+        }
+
+        const id = uuidv4();
+        const shared: SharedCollection = {
+            id,
+            collectionId,
+            collectionName: collection.name,
+            sharedBy: username,
+            sharedWith: friendIds,
+            gameTitles: gameRows.map((g: any) => g.title),
+            gameIds: gameRows.map((g: any) => g.id),
+            createdAt: Date.now(),
+        };
+
+        db.prepare(`
+            INSERT INTO shared_collections (id, collection_id, collection_name, shared_by, shared_with, game_titles, game_ids, message, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(
+            shared.id,
+            shared.collectionId,
+            shared.collectionName,
+            shared.sharedBy,
+            JSON.stringify(shared.sharedWith),
+            JSON.stringify(shared.gameTitles),
+            JSON.stringify(shared.gameIds),
+            null,
+            shared.createdAt
+        );
+
+        // Notify renderer
+        BrowserWindow.getAllWindows().forEach(win => {
+            win.webContents.send('collections:shared', shared);
+        });
+
+        return shared;
+    }
+
+    /**
+     * Get all shared collections (both sent and received)
+     */
+    getSharedCollections(): SharedCollection[] {
+        const db = getDb();
+
+        // Ensure table exists
+        db.exec(`
+            CREATE TABLE IF NOT EXISTS shared_collections (
+                id TEXT PRIMARY KEY,
+                collection_id TEXT NOT NULL,
+                collection_name TEXT NOT NULL,
+                shared_by TEXT NOT NULL,
+                shared_with TEXT NOT NULL,
+                game_titles TEXT NOT NULL,
+                game_ids TEXT NOT NULL,
+                message TEXT,
+                created_at INTEGER NOT NULL,
+                FOREIGN KEY (collection_id) REFERENCES collections(id)
+            )
+        `);
+
+        const rows = db.prepare('SELECT * FROM shared_collections ORDER BY created_at DESC').all() as any[];
+        
+        return rows.map((row: any) => ({
+            id: row.id,
+            collectionId: row.collection_id,
+            collectionName: row.collection_name,
+            sharedBy: row.shared_by,
+            sharedWith: JSON.parse(row.shared_with || '[]'),
+            gameTitles: JSON.parse(row.game_titles || '[]'),
+            gameIds: JSON.parse(row.game_ids || '[]'),
+            createdAt: row.created_at,
+        }));
+    }
+
+    /**
+     * Import a shared collection into your own library as a new collection
+     */
+    importSharedCollection(sharedId: string): { success: boolean; collectionId?: string } {
+        const db = getDb();
+        const shared = db.prepare('SELECT * FROM shared_collections WHERE id = ?').get(sharedId) as any;
+        if (!shared) throw new Error('Shared collection not found');
+
+        const newId = uuidv4();
+        const gameIds: string[] = JSON.parse(shared.game_ids || '[]');
+
+        db.prepare(`
+            INSERT INTO collections (id, name, description, is_dynamic, filter_criteria, created_at)
+            VALUES (?, ?, ?, 0, NULL, ?)
+        `).run(newId, `${shared.collection_name} (from ${shared.shared_by})`, `Imported shared collection`, Date.now());
+
+        // Add games that exist in our library
+        const insertGame = db.prepare(`
+            INSERT OR IGNORE INTO collection_games (collection_id, game_id, added_at)
+            VALUES (?, ?, ?)
+        `);
+
+        const addGames = db.transaction((ids: string[]) => {
+            for (const gameId of ids) {
+                const exists = db.prepare('SELECT id FROM games WHERE id = ?').get(gameId);
+                if (exists) {
+                    insertGame.run(newId, gameId, Date.now());
+                }
+            }
+        });
+
+        addGames(gameIds);
+
+        return { success: true, collectionId: newId };
+    }
+}
+
+export interface ActivityEvent {
+    id: string;
+    type: 'playing' | 'online' | 'offline' | 'achievement' | 'message';
+    friendId: string;
+    friendName: string;
+    friendAvatar: string;
+    platform: string;
+    detail: string | null;
+    timestamp: string;
+}
+
+export interface SharedCollection {
+    id: string;
+    collectionId: string;
+    collectionName: string;
+    sharedBy: string;
+    sharedWith: string[];
+    gameTitles: string[];
+    gameIds: string[];
+    createdAt: number;
 }
