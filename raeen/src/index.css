@@ -18,7 +18,17 @@ body {
   background: radial-gradient(circle at top left, rgba(var(--theme-rgb), 0.4), #0f172a 60%);
   transition: background 0.8s ease-in-out;
   margin: 0;
-  font-family: 'Inter', sans-serif;
+  font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  font-feature-settings: "ss01" on, "cv11" on, "cv02" on;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+h1, h2, h3, h4 { letter-spacing: -0.02em; }
+button, input, select, textarea { font: inherit; }
+input:focus-visible, select:focus-visible, textarea:focus-visible {
+  outline: none;
 }
 
 .theme-glow {
@@ -75,15 +85,31 @@ body {
   border-color: rgba(255, 255, 255, 0.2);
 }
 
-/* Custom Scrollbar Class */
+/* Custom Scrollbar Class — slim, fades in on hover */
 .custom-scrollbar {
-  scrollbar-width: none; /* Firefox */
-  -ms-overflow-style: none; /* IE/Edge */
-  overflow-y: auto; /* Ensure scrolling is enabled */
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.0) transparent;
+  -ms-overflow-style: none;
+  overflow-y: auto;
+  transition: scrollbar-color 0.2s ease;
 }
-
+.custom-scrollbar:hover {
+  scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
+}
 .custom-scrollbar::-webkit-scrollbar {
-  display: none; /* Chrome/Safari/Webkit */
+  width: 6px;
+  height: 6px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0);
+  border-radius: 6px;
+  transition: background 0.2s ease;
+}
+.custom-scrollbar:hover::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.18);
+}
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.3);
 }
 
 /* Global Scrollbar (Fallback - Hidden by default for "Cinematic" feel) */

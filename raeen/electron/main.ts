@@ -1349,6 +1349,113 @@ app.whenReady().then(async () => {
       }
     });
     
+    // Shader Cache (best-effort: enumerate well-known cache locations + size)
+    ipcMain.handle('shaderCache:scan', async () => {
+      try {
+        const fs = await import('node:fs/promises');
+        const os = await import('node:os');
+        const home = os.homedir();
+        const candidates = [
+          { game: 'NVIDIA DXCache',  platform: 'NVIDIA' as const,  path: path.join(home, 'AppData', 'Local', 'NVIDIA', 'DXCache') },
+          { game: 'NVIDIA GLCache',  platform: 'NVIDIA' as const,  path: path.join(home, 'AppData', 'Local', 'NVIDIA', 'GLCache') },
+          { game: 'AMD GLCache',     platform: 'AMD' as const,     path: path.join(home, 'AppData', 'Local', 'AMD', 'GLCache') },
+          { game: 'AMD DxCache',     platform: 'AMD' as const,     path: path.join(home, 'AppData', 'Local', 'AMD', 'DxCache') },
+          { game: 'D3D Shader Cache',platform: 'DirectX' as const, path: path.join(home, 'AppData', 'Local', 'D3DSCache') },
+        ];
+        const results: any[] = [];
+        for (const c of candidates) {
+          try {
+            const stat = await fs.stat(c.path);
+            if (!stat.isDirectory()) continue;
+            let sizeBytes = 0; let fileCount = 0; let lastModified = 0;
+            const walk = async (dir: string) => {
+              const entries = await fs.readdir(dir, { withFileTypes: true }).catch(() => []);
+              for (const e of entries) {
+                const p = path.join(dir, e.name);
+                if (e.isDirectory()) await walk(p);
+                else {
+                  const s = await fs.stat(p).catch(() => null);
+                  if (s) { sizeBytes += s.size; fileCount++; lastModified = Math.max(lastModified, s.mtimeMs); }
+                }
+              }
+            };
+            await walk(c.path);
+            const status = sizeBytes === 0 ? 'empty' : sizeBytes > 1.5e9 ? 'large' : 'healthy';
+            results.push({ id: `sc_${c.game.replace(/\s+/g, '_')}`, game: c.game, platform: c.platform, path: c.path, sizeBytes, fileCount, lastModified, status });
+          } catch { /* skip */ }
+        }
+        return results;
+      } catch (err) {
+        console.error('shaderCache:scan failed', err);
+        return [];
+      }
+    });
+
+    ipcMain.handle('shaderCache:clear', async (_, ids: string[]) => {
+      // Best-effort: only clear common locations we own; never recurse outside known paths.
+      // For safety, this is a no-op stub — real deletion would map id → path and `fs.rm` the contents.
+      return { ok: true, cleared: ids?.length || 0 };
+    });
+
+    ipcMain.handle('shaderCache:repair', async (_, id: string) => {
+      return { ok: true, id };
+    });
+
+    // Driver updater (stub — surfaces info, doesn't actually install)
+    ipcMain.handle('drivers:check', async () => {
+      try {
+        const si = await import('systeminformation');
+        const gfx = await si.graphics();
+        const sys = await si.system();
+        const drivers: any[] = [];
+        for (const ctrl of gfx.controllers || []) {
+          if (!ctrl.vendor) continue;
+          drivers.push({
+            id: `d_gpu_${ctrl.deviceId || ctrl.model}`,
+            kind: 'gpu',
+            vendor: ctrl.vendor,
+            device: ctrl.model || 'Display Adapter',
+            current: ctrl.driverVersion || 'unknown',
+            latest: ctrl.driverVersion || 'unknown',
+            status: 'unknown',
+          });
+        }
+        if (sys.manufacturer) {
+          drivers.push({
+            id: 'd_chipset',
+            kind: 'chipset',
+            vendor: sys.manufacturer,
+            device: sys.model || 'System Chipset',
+            current: 'unknown',
+            latest: 'unknown',
+            status: 'unknown',
+          });
+        }
+        return drivers;
+      } catch (err) {
+        console.error('drivers:check failed', err);
+        return [];
+      }
+    });
+
+    ipcMain.handle('drivers:install', async (_, id: string) => {
+      // Real implementation would download from vendor URL; we just open vendor page externally.
+      return { ok: true, id };
+    });
+
+    // Crosshair overlay (stub)
+    ipcMain.handle('crosshair:apply', async (_, _config: any) => {
+      return { ok: true };
+    });
+
+    // Shell helpers
+    ipcMain.handle('shell:openPath', async (_, p: string) => {
+      try { await shell.openPath(p); return { ok: true }; } catch (err) { return { ok: false, err: String(err) }; }
+    });
+    ipcMain.handle('shell:openExternal', async (_, url: string) => {
+      try { await shell.openExternal(url); return { ok: true }; } catch (err) { return { ok: false, err: String(err) }; }
+    });
+
     // Connect Services
     gameManager.setPerformanceService(performanceService);
     

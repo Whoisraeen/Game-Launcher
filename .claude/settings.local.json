@@ -14,7 +14,10 @@
       "Bash(set PYTHON=\"C:\\Users\\woisr\\AppData\\Local\\Programs\\Python\\Python314\\python.exe\")",
       "Bash(npm_config_python=\"C:\\Users\\woisr\\AppData\\Local\\Programs\\Python\\Python314\\python.exe\" npx:*)",
       "Bash(cat:*)",
-      "Bash(dir:*)"
+      "Bash(dir:*)",
+      "Bash(xargs -I {} bash -c \"echo '=== {} ===' && head -20 {}\")",
+      "Bash(xargs -I {} bash -c \"echo '=== {} ===' && head -30 {}\")",
+      "Bash(npx tsc *)"
     ],
     "deny": [],
     "ask": []

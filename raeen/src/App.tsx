@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import Sidebar from './components/Sidebar';
 import RightSidebar from './components/RightSidebar';
 import { Ghost, Settings as SettingsIcon, Bell, MonitorPlay, Activity } from 'lucide-react';
@@ -35,6 +35,14 @@ import Troubleshooter from './components/tools/Troubleshooter';
 import Achievements from './components/pages/Achievements';
 import Screenshots from './components/pages/Screenshots';
 import DLCManager from './components/pages/DLCManager';
+import Backlog from './components/pages/Backlog';
+import PlaytimeGoals from './components/pages/PlaytimeGoals';
+import ShaderCache from './components/pages/ShaderCache';
+import DriverUpdater from './components/pages/DriverUpdater';
+import AimTrainer from './components/pages/AimTrainer';
+import CrosshairOverlay from './components/pages/CrosshairOverlay';
+import Wellness from './components/pages/Wellness';
+import Rotation from './components/pages/RotationScheduler';
 
 
 
@@ -86,6 +94,14 @@ function App() {
       case 'Mods': return <Mods />;
       case 'Screenshots': return <Screenshots />;
       case 'DLCManager': return <DLCManager />;
+      case 'Backlog': return <Backlog />;
+      case 'Goals': return <PlaytimeGoals />;
+      case 'Rotation': return <Rotation />;
+      case 'ShaderCache': return <ShaderCache />;
+      case 'Drivers': return <DriverUpdater />;
+      case 'AimTrainer': return <AimTrainer />;
+      case 'Crosshair': return <CrosshairOverlay />;
+      case 'Wellness': return <Wellness />;
       case 'SaveManager': return <SaveManager />;
       case 'Studio': return <Studio />;
       case 'HardwareLab': return <HardwareLab />;
@@ -122,33 +138,25 @@ function App() {
           </div>
 
           {/* Top Bar */}
-          <div className="relative z-50 h-10 flex items-center justify-between px-4 border-b border-white/5 bg-[var(--glass-bg)] backdrop-blur-md drag-region">
-            <div className="flex items-center gap-2">
-              <Ghost size={16} className="text-[var(--accent)]" />
-              <span className="text-xs font-bold tracking-widest text-gray-300">RAEEN LAUNCHER</span>
+          <div className="relative z-50 h-11 flex items-center justify-between pl-5 pr-3 border-b border-white/5 bg-[var(--glass-bg)] backdrop-blur-2xl drag-region">
+            <div className="flex items-center gap-2.5">
+              <div className="w-6 h-6 rounded-md bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center shadow-[0_0_12px_rgba(99,102,241,0.4)]">
+                <Ghost size={13} className="text-white" />
+              </div>
+              <span className="text-[11px] font-black tracking-[0.2em] text-white/90">RAEEN</span>
+              <span className="text-[10px] font-medium tracking-wider text-gray-500">LAUNCHER</span>
             </div>
-            <div className="flex items-center gap-4 no-drag">
-              <SystemStatus />
-              <button
-                onClick={() => setIsBigPicture(true)}
-                className="p-1 hover:text-[var(--accent)] transition-colors text-gray-400"
-                title="Enter Big Picture Mode"
-              >
-                <MonitorPlay size={16} />
-              </button>
-              <button
-                onClick={toggleOverlay}
-                className={`p-1 hover:text-[var(--accent)] transition-colors ${isOverlayVisible ? 'text-[var(--accent)]' : 'text-gray-400'}`}
-                title="Toggle Performance Overlay"
-              >
-                <Activity size={16} />
-              </button>
-              <Bell size={14} className="text-gray-400 hover:text-white cursor-pointer" />
-              <SettingsIcon size={14} className="text-gray-400 hover:text-white cursor-pointer" onClick={() => setActivePage('Settings')} />
-              <div className="flex gap-2 ml-2">
-                <div onClick={handleMinimize} className="w-3 h-3 rounded-full bg-yellow-500/20 hover:bg-yellow-500 border border-yellow-500/50 cursor-pointer transition-colors duration-200"></div>
-                <div onClick={handleMaximize} className="w-3 h-3 rounded-full bg-green-500/20 hover:bg-green-500 border border-green-500/50 cursor-pointer transition-colors duration-200"></div>
-                <div onClick={handleClose} className="w-3 h-3 rounded-full bg-red-500/20 hover:bg-red-500 border border-red-500/50 cursor-pointer transition-colors duration-200"></div>
+            <div className="flex items-center gap-1 no-drag">
+              <div className="px-2"><SystemStatus /></div>
+              <TopBarBtn onClick={() => setIsBigPicture(true)} title="Enter Big Picture Mode" icon={<MonitorPlay size={14} />} />
+              <TopBarBtn onClick={toggleOverlay} title="Toggle Performance Overlay"
+                icon={<Activity size={14} />} active={isOverlayVisible} />
+              <TopBarBtn title="Notifications" icon={<Bell size={14} />} />
+              <TopBarBtn onClick={() => setActivePage('Settings')} title="Settings" icon={<SettingsIcon size={14} />} />
+              <div className="flex gap-1.5 ml-3 pl-3 border-l border-white/10">
+                <button onClick={handleMinimize} aria-label="Minimize" className="w-3 h-3 rounded-full bg-yellow-500/30 hover:bg-yellow-400 border border-yellow-500/40 transition-colors" />
+                <button onClick={handleMaximize} aria-label="Maximize" className="w-3 h-3 rounded-full bg-green-500/30 hover:bg-green-400 border border-green-500/40 transition-colors" />
+                <button onClick={handleClose}    aria-label="Close"    className="w-3 h-3 rounded-full bg-red-500/30 hover:bg-red-400 border border-red-500/40 transition-colors" />
               </div>
             </div>
           </div>
@@ -171,5 +179,15 @@ function App() {
     </NavigationProvider>
   );
 }
+
+const TopBarBtn: React.FC<{ icon: React.ReactNode; title?: string; onClick?: () => void; active?: boolean }> = ({ icon, title, onClick, active }) => (
+  <button
+    onClick={onClick}
+    title={title}
+    className={`p-1.5 rounded-md transition-colors ${active ? 'text-[var(--accent)] bg-white/10' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}
+  >
+    {icon}
+  </button>
+);
 
 export default App;
