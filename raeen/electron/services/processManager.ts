@@ -254,4 +254,95 @@ export class ProcessManager {
       return 0;
     }
   }
+
+  // ═══════════════════════════════════════════════════════════════
+  // Dynamic Resource Allocation
+  // ═══════════════════════════════════════════════════════════════
+
+  private dynamicInterval: NodeJS.Timeout | null = null;
+  private dynamicGamePid: number | null = null;
+  private dynamicThrottledPids: number[] = [];
+  private dynamicActive = false;
+  private cpuSpikeThreshold = 80; // percent
+
+  async startDynamicMode(gamePid?: number, gameExecutable?: string): Promise<{ success: boolean; message: string }> {
+    if (this.dynamicActive) {
+      return { success: false, message: 'Dynamic mode is already active' };
+    }
+
+    if (!gamePid && gameExecutable) {
+      const list = await this.getProcessList();
+      const proc = list.find(p => p.name.toLowerCase() === gameExecutable.toLowerCase());
+      if (proc) gamePid = proc.pid;
+    }
+
+    this.dynamicGamePid = gamePid || null;
+    this.dynamicActive = true;
+    this.dynamicThrottledPids = [];
+
+    this.dynamicInterval = setInterval(async () => {
+      if (!this.dynamicActive) return;
+
+      try {
+        const processes = await this.getProcessList();
+        if (!this.dynamicGamePid) return;
+
+        const gameProc = processes.find(p => p.pid === this.dynamicGamePid);
+        if (!gameProc) {
+          await this.stopDynamicMode();
+          return;
+        }
+
+        const totalMemKb = processes.reduce((s, p) => s + (p.memoryKb || 0), 0);
+        const gameMemPercent = totalMemKb > 0 ? ((gameProc.memoryKb || 0) / totalMemKb) * 100 : 0;
+
+        const heavyBg = processes.filter(p =>
+          p.pid !== this.dynamicGamePid &&
+          p.memoryKb > 200000 &&
+          !SYSTEM_SAFELIST.includes(p.name.toLowerCase())
+        );
+
+        if (gameMemPercent > this.cpuSpikeThreshold || gameProc.memoryKb > 2000000) {
+          for (const bg of heavyBg) {
+            if (!this.dynamicThrottledPids.includes(bg.pid)) {
+              const ok = await this.setLowPriority(bg.pid);
+              if (ok) this.dynamicThrottledPids.push(bg.pid);
+            }
+          }
+        } else if (this.dynamicThrottledPids.length > 0 && gameMemPercent < 50) {
+          for (const pid of this.dynamicThrottledPids) {
+            await this.setNormalPriority(pid);
+          }
+          this.dynamicThrottledPids = [];
+        }
+      } catch (e) {
+        console.error('Dynamic resource allocation error:', e);
+      }
+    }, 5000);
+
+    return { success: true, message: `Dynamic mode started${gamePid ? ` for PID ${gamePid}` : ''}` };
+  }
+
+  async stopDynamicMode(): Promise<{ success: boolean; restored: number }> {
+    this.dynamicActive = false;
+
+    if (this.dynamicInterval) {
+      clearInterval(this.dynamicInterval);
+      this.dynamicInterval = null;
+    }
+
+    let restored = 0;
+    for (const pid of this.dynamicThrottledPids) {
+      const ok = await this.setNormalPriority(pid);
+      if (ok) restored++;
+    }
+    this.dynamicThrottledPids = [];
+    this.dynamicGamePid = null;
+
+    return { success: true, restored };
+  }
+
+  isDynamicModeActive(): boolean {
+    return this.dynamicActive;
+  }
 }

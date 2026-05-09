@@ -452,7 +452,7 @@ export class GameManager extends EventEmitter {
                     // Notify listeners
                     this.emit('game-ended', game);
 
-                    // Trigger memory cleanup and restore performance settings
+                    // Trigger memory cleanup, report generation, and restore performance settings
                     try {
                         const settingsManager = new SettingsManager();
                         const settings = settingsManager.getAllSettings();
@@ -463,10 +463,30 @@ export class GameManager extends EventEmitter {
                                 .catch(err => console.error('Error restoring system performance settings:', err));
                         }
 
+                        // Generate performance report before clearing metrics
+                        if (this.performanceService) {
+                            try {
+                                console.log('Generating post-game performance report...');
+                                this.performanceService.stopMetricsCollection(game.id);
+                                const report = this.performanceService.generateReport(game.id);
+                                if (report.success) {
+                                    console.log(`Performance report generated: ${report.reportId}`);
+                                }
+                            } catch (reportErr) {
+                                console.error('Error generating performance report:', reportErr);
+                            }
+                        }
+
                         // Check if user has enabled post-session cleanup (defaulting to true)
                         const cleanupEnabled = settings.performance.memoryCleanup !== false;
 
-                        if (cleanupEnabled) {
+                        if (cleanupEnabled && this.performanceService) {
+                            console.log('Starting post-session memory cleanup via PerformanceService...');
+                            const result = await this.performanceService.cleanMemory();
+                            if (result.success) {
+                                console.log('Memory cleanup completed:', result.actions.join(', '));
+                            }
+                        } else if (cleanupEnabled) {
                             console.log('Starting post-session memory cleanup...');
                             const result = await this.processManager.cleanMemoryAfterSession();
                             if (result.success) {
@@ -560,12 +580,16 @@ export class GameManager extends EventEmitter {
             const settings = settingsManager.getAllSettings();
             if (settings.performance.optimizeOnLaunch && this.performanceService) {
                 console.log('Triggering auto-optimization...');
-                // Fire and forget, or at least don't block launch too long
                 this.performanceService.optimizeSystem(game.executable ? path.basename(game.executable) : undefined)
                     .catch(err => console.error('Auto-optimization error:', err));
             }
         } catch (err) {
             console.error('Error checking performance settings:', err);
+        }
+
+        // Start performance metrics collection for post-game report
+        if (this.performanceService) {
+            this.performanceService.startMetricsCollection(gameId);
         }
 
         const launchOptions = game.launch_options || '';

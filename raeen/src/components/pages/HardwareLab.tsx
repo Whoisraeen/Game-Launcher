@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { Cpu, Zap, Fan, Thermometer, Activity, Palette, Power, Settings, Monitor, HardDrive } from 'lucide-react';
+import { Cpu, Zap, Fan, Thermometer, Activity, Palette, Power, Settings, Monitor, HardDrive, CheckCircle, AlertTriangle as AlertTriangleIcon, XCircle, Search } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line } from 'recharts';
 import MonitorCalibration from '../MonitorCalibration';
 import StorageOptimizer from '../StorageOptimizer';
+import { useGameStore } from '../../stores/gameStore';
 
 const HardwareLab: React.FC = () => {
-    const [activeTab, setActiveTab] = useState<'cooling' | 'power' | 'rgb' | 'calibration' | 'storage'>('cooling');
+    const [activeTab, setActiveTab] = useState<'cooling' | 'power' | 'rgb' | 'calibration' | 'storage' | 'compat'>('cooling');
     const [stats, setStats] = useState<any>(null);
 
     useEffect(() => {
@@ -61,6 +62,12 @@ const HardwareLab: React.FC = () => {
                         icon={<HardDrive size={16} />}
                         label="Storage"
                     />
+                    <TabButton
+                        active={activeTab === 'compat'}
+                        onClick={() => setActiveTab('compat')}
+                        icon={<CheckCircle size={16} />}
+                        label="Compat"
+                    />
                 </div>
             </div>
 
@@ -70,6 +77,7 @@ const HardwareLab: React.FC = () => {
                 {activeTab === 'rgb' && <RGBControl />}
                 {activeTab === 'calibration' && <MonitorCalibration />}
                 {activeTab === 'storage' && <StorageOptimizer />}
+                {activeTab === 'compat' && <CompatChecker />}
             </div>
         </div>
     );
@@ -563,6 +571,127 @@ const RGBControl = () => {
                 >
                     <Power size={18} /> Apply Static Color
                 </button>
+            </div>
+        </div>
+    );
+};
+
+const CompatChecker = () => {
+    const { games } = useGameStore();
+    const [systemSpecs, setSystemSpecs] = useState<any>(null);
+    const [results, setResults] = useState<Map<string, any>>(new Map());
+    const [checking, setChecking] = useState<string | null>(null);
+    const [search, setSearch] = useState('');
+
+    useEffect(() => {
+        const fetchSpecs = async () => {
+            try {
+                const specs = await window.ipcRenderer.invoke('compat:getSystemSpecs');
+                setSystemSpecs(specs);
+            } catch (e) {
+                console.error('Failed to get system specs', e);
+            }
+        };
+        fetchSpecs();
+    }, []);
+
+    const checkGame = async (gameId: string) => {
+        setChecking(gameId);
+        try {
+            const result = await window.ipcRenderer.invoke('compat:checkGame', gameId);
+            setResults(prev => new Map(prev).set(gameId, result));
+        } catch (e) {
+            console.error('Compat check failed', e);
+        } finally {
+            setChecking(null);
+        }
+    };
+
+    const verdictIcon = (v: string) => {
+        if (v === 'Exceeds') return <CheckCircle size={16} className="text-green-400" />;
+        if (v === 'Meets') return <AlertTriangleIcon size={16} className="text-yellow-400" />;
+        if (v === 'Below Minimum') return <XCircle size={16} className="text-red-400" />;
+        return <span className="text-gray-500 text-xs">?</span>;
+    };
+
+    const verdictColor = (v: string) => {
+        if (v === 'Exceeds') return 'text-green-400';
+        if (v === 'Meets') return 'text-yellow-400';
+        if (v === 'Below Minimum') return 'text-red-400';
+        return 'text-gray-500';
+    };
+
+    const filtered = games.filter(g => g.title.toLowerCase().includes(search.toLowerCase()));
+
+    return (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-full">
+            <div className="lg:col-span-2 bg-slate-800/30 rounded-xl p-6 border border-white/5 flex flex-col">
+                <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
+                    <CheckCircle size={20} className="text-green-500" /> Hardware Compatibility
+                </h3>
+                <div className="relative mb-4">
+                    <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
+                    <input
+                        value={search}
+                        onChange={e => setSearch(e.target.value)}
+                        placeholder="Search games…"
+                        className="w-full pl-9 pr-3 py-2 bg-black/25 border border-white/8 rounded-lg text-sm text-white placeholder:text-gray-500 focus:border-blue-500/40 focus:outline-none"
+                    />
+                </div>
+                <div className="flex-1 overflow-y-auto custom-scrollbar space-y-2">
+                    {filtered.slice(0, 30).map(game => {
+                        const result = results.get(game.id);
+                        return (
+                            <div key={game.id} className="flex items-center justify-between p-3 bg-black/20 rounded-lg border border-white/5 hover:bg-white/[0.03] transition-colors">
+                                <div className="flex items-center gap-3 min-w-0">
+                                    <div className="w-8 h-10 bg-slate-700 rounded flex-shrink-0 overflow-hidden">
+                                        {game.cover && <img src={game.cover} className="w-full h-full object-cover" />}
+                                    </div>
+                                    <span className="text-sm font-medium text-white truncate">{game.title}</span>
+                                </div>
+                                <div className="flex items-center gap-3 flex-shrink-0">
+                                    {result && (
+                                        <div className="flex items-center gap-1.5">
+                                            {verdictIcon(result.verdict)}
+                                            <span className={`text-xs font-bold ${verdictColor(result.verdict)}`}>{result.verdict}</span>
+                                        </div>
+                                    )}
+                                    <button
+                                        onClick={() => checkGame(game.id)}
+                                        disabled={checking === game.id}
+                                        className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-xs font-bold rounded-lg transition-colors"
+                                    >
+                                        {checking === game.id ? 'Checking...' : 'Check'}
+                                    </button>
+                                </div>
+                            </div>
+                        );
+                    })}
+                    {filtered.length === 0 && <p className="text-center text-gray-500 text-sm py-8">No games found.</p>}
+                </div>
+            </div>
+
+            <div className="space-y-6">
+                <div className="bg-slate-800/30 rounded-xl p-6 border border-white/5">
+                    <h3 className="text-sm font-bold text-gray-400 uppercase mb-4">Your System</h3>
+                    {systemSpecs ? (
+                        <div className="space-y-3 text-sm">
+                            <div className="flex justify-between"><span className="text-gray-400">CPU</span><span className="text-white font-medium truncate ml-2">{systemSpecs.cpu.model}</span></div>
+                            <div className="flex justify-between"><span className="text-gray-400">Cores</span><span className="text-white font-bold">{systemSpecs.cpu.cores}</span></div>
+                            <div className="flex justify-between"><span className="text-gray-400">RAM</span><span className="text-white font-bold">{systemSpecs.ram} GB</span></div>
+                            <div className="flex justify-between"><span className="text-gray-400">GPU</span><span className="text-white font-medium truncate ml-2">{systemSpecs.gpu?.[0]?.model || 'N/A'}</span></div>
+                            <div className="flex justify-between"><span className="text-gray-400">VRAM</span><span className="text-white font-bold">{systemSpecs.gpu?.[0]?.vram || 0} MB</span></div>
+                            <div className="flex justify-between"><span className="text-gray-400">Storage</span><span className="text-white font-bold">{systemSpecs.storage} GB</span></div>
+                            <div className="flex justify-between"><span className="text-gray-400">OS</span><span className="text-white text-xs truncate ml-2">{systemSpecs.os}</span></div>
+                        </div>
+                    ) : (
+                        <p className="text-gray-500 text-sm">Loading specs...</p>
+                    )}
+                </div>
+                <div className="bg-blue-500/10 border border-blue-500/20 rounded-xl p-4 text-sm text-blue-200/80">
+                    <p className="font-bold text-blue-300 mb-1">How it works</p>
+                    <p>Set minimum/recommended specs per game, then click "Check" to compare against your hardware. Verdicts: <span className="text-green-400 font-bold">Exceeds</span>, <span className="text-yellow-400 font-bold">Meets</span>, or <span className="text-red-400 font-bold">Below Minimum</span>.</p>
+                </div>
             </div>
         </div>
     );

@@ -370,6 +370,116 @@ const migrations: Migration[] = [
                 CREATE INDEX IF NOT EXISTS idx_friend_messages_timestamp ON friend_messages(timestamp);
             `);
         }
+    },
+    {
+        version: 11,
+        name: 'create_performance_tables',
+        up: (db) => {
+            db.exec(`
+                CREATE TABLE IF NOT EXISTS game_performance_profiles (
+                    id TEXT PRIMARY KEY,
+                    game_id TEXT NOT NULL,
+                    target_fps INTEGER NOT NULL DEFAULT 60,
+                    quality_level INTEGER NOT NULL DEFAULT 3,
+                    resolution_scale REAL NOT NULL DEFAULT 1.0,
+                    vsync INTEGER NOT NULL DEFAULT 1,
+                    shadow_quality INTEGER NOT NULL DEFAULT 3,
+                    texture_quality INTEGER NOT NULL DEFAULT 3,
+                    anti_aliasing INTEGER NOT NULL DEFAULT 2,
+                    post_processing INTEGER NOT NULL DEFAULT 3,
+                    view_distance INTEGER NOT NULL DEFAULT 3,
+                    last_avg_fps REAL,
+                    last_adjusted_at INTEGER,
+                    created_at INTEGER DEFAULT (strftime('%s', 'now') * 1000),
+                    updated_at INTEGER DEFAULT (strftime('%s', 'now') * 1000),
+                    FOREIGN KEY (game_id) REFERENCES games(id) ON DELETE CASCADE,
+                    UNIQUE(game_id)
+                )
+            `);
+
+            db.exec(`
+                CREATE TABLE IF NOT EXISTS graphics_profiles (
+                    id TEXT PRIMARY KEY,
+                    game_id TEXT NOT NULL,
+                    profile_name TEXT NOT NULL,
+                    settings_json TEXT NOT NULL DEFAULT '{}',
+                    created_at INTEGER DEFAULT (strftime('%s', 'now') * 1000),
+                    FOREIGN KEY (game_id) REFERENCES games(id) ON DELETE CASCADE
+                )
+            `);
+
+            db.exec(`
+                CREATE TABLE IF NOT EXISTS performance_reports (
+                    id TEXT PRIMARY KEY,
+                    game_id TEXT NOT NULL,
+                    session_id INTEGER,
+                    avg_fps REAL,
+                    min_fps REAL,
+                    max_fps REAL,
+                    max_cpu_temp REAL,
+                    max_gpu_temp REAL,
+                    avg_cpu_usage REAL,
+                    avg_memory_usage REAL,
+                    duration_seconds INTEGER,
+                    stutter_count INTEGER DEFAULT 0,
+                    frame_drops INTEGER DEFAULT 0,
+                    created_at INTEGER DEFAULT (strftime('%s', 'now') * 1000),
+                    FOREIGN KEY (game_id) REFERENCES games(id) ON DELETE CASCADE
+                )
+            `);
+
+            db.exec(`
+                CREATE INDEX IF NOT EXISTS idx_game_perf_profiles_game_id ON game_performance_profiles(game_id);
+                CREATE INDEX IF NOT EXISTS idx_graphics_profiles_game_id ON graphics_profiles(game_id);
+                CREATE INDEX IF NOT EXISTS idx_performance_reports_game_id ON performance_reports(game_id);
+                CREATE INDEX IF NOT EXISTS idx_performance_reports_session_id ON performance_reports(session_id);
+            `);
+        }
+    },
+    {
+        version: 12,
+        name: 'create_clans_tables',
+        up: (db) => {
+            db.exec(`
+                CREATE TABLE IF NOT EXISTS clans (
+                    id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    tag TEXT NOT NULL,
+                    game_focus TEXT,
+                    created_at INTEGER DEFAULT (strftime('%s', 'now') * 1000)
+                )
+            `);
+
+            db.exec(`
+                CREATE TABLE IF NOT EXISTS clan_members (
+                    clan_id TEXT NOT NULL,
+                    friend_id TEXT NOT NULL,
+                    role TEXT NOT NULL DEFAULT 'member',
+                    joined_at INTEGER DEFAULT (strftime('%s', 'now') * 1000),
+                    PRIMARY KEY (clan_id, friend_id),
+                    FOREIGN KEY (clan_id) REFERENCES clans(id) ON DELETE CASCADE,
+                    FOREIGN KEY (friend_id) REFERENCES friends(id) ON DELETE CASCADE
+                )
+            `);
+
+            db.exec(`
+                CREATE TABLE IF NOT EXISTS clan_messages (
+                    id TEXT PRIMARY KEY,
+                    clan_id TEXT NOT NULL,
+                    sender TEXT NOT NULL,
+                    content TEXT NOT NULL,
+                    timestamp INTEGER NOT NULL,
+                    created_at INTEGER DEFAULT (strftime('%s', 'now') * 1000),
+                    FOREIGN KEY (clan_id) REFERENCES clans(id) ON DELETE CASCADE
+                )
+            `);
+
+            db.exec(`
+                CREATE INDEX IF NOT EXISTS idx_clan_members_clan_id ON clan_members(clan_id);
+                CREATE INDEX IF NOT EXISTS idx_clan_messages_clan_id ON clan_messages(clan_id);
+                CREATE INDEX IF NOT EXISTS idx_clan_messages_timestamp ON clan_messages(timestamp);
+            `);
+        }
     }
 ];
 

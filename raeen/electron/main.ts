@@ -43,6 +43,15 @@ import { StoreService } from './services/storeService';
 import { Store } from './store';
 import { StoreService as ElectronStoreService } from './services/store';
 import { AuthManager } from './services/AuthManager';
+import { AudioService } from './services/audioService';
+import { NetworkService } from './services/networkService';
+import { CompatibilityService } from './services/compatibilityService';
+import { StreamHelperService } from './services/streamHelperService';
+import { ShaderService } from './services/shaderService';
+import { UIScalerService } from './services/uiScalerService';
+import { HardwareCompatService } from './services/hardwareCompatService';
+import { DriveScanner } from './services/DriveScanner';
+import { ProcessManager } from './services/processManager';
 import { ObsConnectionConfig } from './types';
 
 // Services Instances
@@ -75,6 +84,14 @@ let gamingSessionService: GamingSessionService;
 let expenseTrackerService: ExpenseTrackerService;
 let storeService: StoreService;
 let authManager: AuthManager;
+let audioService: AudioService;
+let networkService: NetworkService;
+let compatibilityService: CompatibilityService;
+let streamHelperService: StreamHelperService;
+let shaderService: ShaderService;
+let uiScalerService: UIScalerService;
+let hardwareCompatService: HardwareCompatService;
+let processManagerInstance: ProcessManager;
 
 // Controllers Instances
 let gameController: GameController;
@@ -177,6 +194,7 @@ app.whenReady().then(async () => {
     manualGameService = new ManualGameService();
     saveManagerService = new SaveManagerService();
     videoEditorService = new VideoEditorService();
+    streamHelperService = new StreamHelperService();
     obsService = new ObsService();
     rgbService = new RGBService();
     fanControlService = new FanControlService();
@@ -195,6 +213,13 @@ app.whenReady().then(async () => {
     expenseTrackerService = new ExpenseTrackerService();
     storeService = new StoreService();
     authManager = new AuthManager();
+    audioService = new AudioService();
+    networkService = new NetworkService();
+    compatibilityService = new CompatibilityService();
+    shaderService = new ShaderService();
+    uiScalerService = new UIScalerService();
+    hardwareCompatService = new HardwareCompatService();
+    processManagerInstance = new ProcessManager();
     
     // Initialize Controllers
     // This registers the game handlers!
@@ -254,6 +279,15 @@ app.whenReady().then(async () => {
           throw error;
         }
       });
+
+    ipcMain.handle('hltb:search', async (_, gameName: string) => {
+      try {
+        return await hltbService.search(gameName);
+      } catch (error) {
+        console.error('HLTB search failed:', error);
+        return null;
+      }
+    });
 
     // RGB IPC Handlers
     ipcMain.handle('rgb:getDevices', async () => {
@@ -325,6 +359,24 @@ app.whenReady().then(async () => {
 
     ipcMain.handle('settings:reset', () => {
       return settingsManager.resetSettings();
+    });
+
+    // Dialog IPC Handlers
+    ipcMain.handle('dialog:openDirectory', async () => {
+      const result = await dialog.showOpenDialog({
+        properties: ['openDirectory']
+      });
+      if (result.canceled || result.filePaths.length === 0) return null;
+      return result.filePaths[0];
+    });
+
+    ipcMain.handle('dialog:openFiles', async (_, options?: { filters?: Array<{ name: string; extensions: string[] }> }) => {
+      const result = await dialog.showOpenDialog({
+        properties: ['openFile', 'multiSelections'],
+        filters: options?.filters
+      });
+      if (result.canceled || result.filePaths.length === 0) return null;
+      return result.filePaths;
     });
 
     // System IPC Handlers
@@ -1255,7 +1307,38 @@ app.whenReady().then(async () => {
         throw error;
       }
     });
-  
+
+    ipcMain.handle('video:compileHighlights', async (_, clipPaths: string[], outputPath: string, transitionType: string) => {
+      try {
+        return await videoEditorService.compileHighlights(clipPaths, outputPath, transitionType as any);
+      } catch (error) {
+        console.error('Failed to compile highlights:', error);
+        throw error;
+      }
+    });
+
+    // Stream Helper IPC
+    ipcMain.handle('stream:generateTitle', async (_, gameName: string, mood: string, style: string) => {
+      try {
+        return streamHelperService.generateTitle(gameName, mood, style);
+      } catch (error) {
+        console.error('Failed to generate stream title:', error);
+        throw error;
+      }
+    });
+
+    ipcMain.handle('stream:getTitleHistory', async () => {
+      return streamHelperService.getTitleHistory();
+    });
+
+    ipcMain.handle('stream:getMoods', async () => {
+      return streamHelperService.getMoods();
+    });
+
+    ipcMain.handle('stream:getStyles', async () => {
+      return streamHelperService.getStyles();
+    });
+
     // Save Manager IPC
     ipcMain.handle('saves:getConfig', () => {
       return {
@@ -1439,13 +1522,327 @@ app.whenReady().then(async () => {
     });
 
     ipcMain.handle('drivers:install', async (_, id: string) => {
-      // Real implementation would download from vendor URL; we just open vendor page externally.
       return { ok: true, id };
+    });
+
+    ipcMain.handle('drivers:checkUpdates', async () => {
+      try {
+        const si = await import('systeminformation');
+        const gfx = await si.graphics();
+        const drivers: any[] = [];
+        for (const ctrl of gfx.controllers || []) {
+          if (!ctrl.vendor) continue;
+          const current = ctrl.driverVersion || 'unknown';
+          drivers.push({
+            id: `d_gpu_${ctrl.deviceId || ctrl.model}`,
+            kind: 'gpu',
+            vendor: ctrl.vendor,
+            device: ctrl.model || 'Display Adapter',
+            current,
+            latest: current,
+            status: current === 'unknown' ? 'unknown' : 'up-to-date',
+            releaseNotesUrl: ctrl.vendor.includes('NVIDIA') ? 'https://www.nvidia.com/Download/index.aspx'
+              : ctrl.vendor.includes('AMD') ? 'https://www.amd.com/en/support'
+              : ctrl.vendor.includes('Intel') ? 'https://www.intel.com/content/www/us/en/download-center/home.html'
+              : undefined,
+          });
+        }
+        return drivers;
+      } catch (err) {
+        console.error('drivers:checkUpdates failed', err);
+        return [];
+      }
     });
 
     // Crosshair overlay (stub)
     ipcMain.handle('crosshair:apply', async (_, _config: any) => {
       return { ok: true };
+    });
+
+    // Keybind Manager IPC Handlers
+    ipcMain.handle('keybinds:scan', async () => {
+      try {
+        const fs = await import('node:fs/promises');
+        const os = await import('node:os');
+        const home = os.homedir();
+        const results: any[] = [];
+
+        const configPatterns = [
+          { base: path.join(home, 'Documents', 'My Games'), depth: 2 },
+          { base: path.join(home, 'AppData', 'Roaming'), depth: 1 },
+          { base: path.join(home, 'AppData', 'Local'), depth: 1 },
+        ];
+
+        const keybindFilePatterns = [
+          /keybind/i, /input/i, /controls/i, /hotkey/i, /keymap/i, /bindings/i,
+        ];
+        const keybindExtensions = ['.cfg', '.ini', '.xml', '.json', '.txt', '.config'];
+
+        for (const pattern of configPatterns) {
+          try {
+            const entries = await fs.readdir(pattern.base, { withFileTypes: true });
+            for (const entry of entries) {
+              if (!entry.isDirectory()) continue;
+              const subDir = path.join(pattern.base, entry.name);
+              try {
+                const subFiles = await fs.readdir(subDir, { withFileTypes: true });
+                for (const file of subFiles) {
+                  if (!file.isFile()) continue;
+                  const ext = path.extname(file.name).toLowerCase();
+                  const nameMatch = keybindFilePatterns.some(p => p.test(file.name));
+                  if (nameMatch && keybindExtensions.includes(ext)) {
+                    const filePath = path.join(subDir, file.name);
+                    const stat = await fs.stat(filePath).catch(() => null);
+                    results.push({
+                      game: entry.name,
+                      path: filePath,
+                      fileName: file.name,
+                      size: stat?.size || 0,
+                      lastModified: stat?.mtimeMs || 0,
+                    });
+                  }
+                }
+                if (pattern.depth >= 2) {
+                  for (const sub of subFiles) {
+                    if (!sub.isDirectory()) continue;
+                    const deepDir = path.join(subDir, sub.name);
+                    try {
+                      const deepFiles = await fs.readdir(deepDir, { withFileTypes: true });
+                      for (const file of deepFiles) {
+                        if (!file.isFile()) continue;
+                        const ext = path.extname(file.name).toLowerCase();
+                        const nameMatch = keybindFilePatterns.some(p => p.test(file.name));
+                        if (nameMatch && keybindExtensions.includes(ext)) {
+                          const filePath = path.join(deepDir, file.name);
+                          const stat = await fs.stat(filePath).catch(() => null);
+                          results.push({
+                            game: entry.name,
+                            path: filePath,
+                            fileName: file.name,
+                            size: stat?.size || 0,
+                            lastModified: stat?.mtimeMs || 0,
+                          });
+                        }
+                      }
+                    } catch {}
+                  }
+                }
+              } catch {}
+            }
+          } catch {}
+        }
+        return results;
+      } catch (err) {
+        console.error('keybinds:scan failed', err);
+        return [];
+      }
+    });
+
+    ipcMain.handle('keybinds:backup', async (_, filePath: string, gameName: string) => {
+      try {
+        const fs = await import('node:fs/promises');
+        const backupDir = path.join(app.getPath('userData'), 'keybinds', gameName.replace(/[<>:"/\\|?*]/g, '_'));
+        await fs.mkdir(backupDir, { recursive: true });
+        const fileName = path.basename(filePath);
+        const backupPath = path.join(backupDir, `${Date.now()}_${fileName}`);
+        await fs.copyFile(filePath, backupPath);
+        const stat = await fs.stat(backupPath);
+        return { ok: true, id: path.basename(backupPath), game: gameName, backupPath, originalPath: filePath, timestamp: Date.now(), size: stat.size };
+      } catch (err) {
+        console.error('keybinds:backup failed', err);
+        throw err;
+      }
+    });
+
+    ipcMain.handle('keybinds:restore', async (_, backupId: string) => {
+      try {
+        const fs = await import('node:fs/promises');
+        const backupsRoot = path.join(app.getPath('userData'), 'keybinds');
+        let found: { backupPath: string; originalPath: string } | null = null;
+
+        const metaPath = path.join(backupsRoot, '.meta.json');
+        try {
+          const meta = JSON.parse(await fs.readFile(metaPath, 'utf-8'));
+          const entry = meta.find((m: any) => m.id === backupId);
+          if (entry) found = { backupPath: entry.backupPath, originalPath: entry.originalPath };
+        } catch {}
+
+        if (!found) {
+          const gameDirs = await fs.readdir(backupsRoot, { withFileTypes: true });
+          for (const gd of gameDirs) {
+            if (!gd.isDirectory()) continue;
+            const files = await fs.readdir(path.join(backupsRoot, gd.name));
+            const match = files.find(f => f === backupId || f.includes(backupId));
+            if (match) {
+              found = { backupPath: path.join(backupsRoot, gd.name, match), originalPath: '' };
+              break;
+            }
+          }
+        }
+
+        if (!found) throw new Error('Backup not found');
+        if (found.originalPath) {
+          await fs.copyFile(found.backupPath, found.originalPath);
+        }
+        return { ok: true };
+      } catch (err) {
+        console.error('keybinds:restore failed', err);
+        throw err;
+      }
+    });
+
+    ipcMain.handle('keybinds:getBackups', async () => {
+      try {
+        const fs = await import('node:fs/promises');
+        const backupsRoot = path.join(app.getPath('userData'), 'keybinds');
+        const results: any[] = [];
+
+        try { await fs.access(backupsRoot); } catch { return []; }
+
+        const gameDirs = await fs.readdir(backupsRoot, { withFileTypes: true });
+        for (const gd of gameDirs) {
+          if (!gd.isDirectory()) continue;
+          const gamePath = path.join(backupsRoot, gd.name);
+          const files = await fs.readdir(gamePath);
+          for (const file of files) {
+            const filePath = path.join(gamePath, file);
+            const stat = await fs.stat(filePath).catch(() => null);
+            if (!stat || !stat.isFile()) continue;
+            const tsMatch = file.match(/^(\d+)_/);
+            results.push({
+              id: file,
+              game: gd.name.replace(/_/g, ' '),
+              backupPath: filePath,
+              originalPath: '',
+              timestamp: tsMatch ? parseInt(tsMatch[1]) : stat.mtimeMs,
+              size: stat.size,
+            });
+          }
+        }
+        return results.sort((a, b) => b.timestamp - a.timestamp);
+      } catch (err) {
+        console.error('keybinds:getBackups failed', err);
+        return [];
+      }
+    });
+
+    // License / Pro System
+    ipcMain.handle('license:getStatus', () => {
+      try {
+        const db = require('./database').getDb();
+        const keyRow = db.prepare("SELECT value FROM settings WHERE key = 'license.key'").get() as { value: string } | undefined;
+        const atRow = db.prepare("SELECT value FROM settings WHERE key = 'license.activatedAt'").get() as { value: string } | undefined;
+        if (keyRow && keyRow.value) {
+          return { isPro: true, licenseKey: keyRow.value, activatedAt: atRow?.value || null };
+        }
+        return { isPro: false, licenseKey: null, activatedAt: null };
+      } catch {
+        return { isPro: false, licenseKey: null, activatedAt: null };
+      }
+    });
+
+    ipcMain.handle('license:activate', (_, key: string) => {
+      try {
+        const db = require('./database').getDb();
+        const isValid = key.startsWith('RAEEN-PRO-') && key.length >= 16;
+        if (isValid) {
+          const now = new Date().toISOString();
+          db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)").run('license.key', key);
+          db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)").run('license.activatedAt', now);
+          return { isPro: true, licenseKey: key, activatedAt: now };
+        }
+        return { isPro: false, licenseKey: null, activatedAt: null };
+      } catch {
+        return { isPro: false, licenseKey: null, activatedAt: null };
+      }
+    });
+
+    // Clan Management
+    ipcMain.handle('clans:create', (_, data: { name: string; tag: string; game_focus?: string }) => {
+      try {
+        const db = require('./database').getDb();
+        const { v4: uuid } = require('crypto');
+        const id = `clan_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+        const now = Date.now();
+        db.prepare('INSERT INTO clans (id, name, tag, game_focus, created_at) VALUES (?, ?, ?, ?, ?)').run(
+          id, data.name, data.tag, data.game_focus || null, now
+        );
+        return { id, name: data.name, tag: data.tag, game_focus: data.game_focus || '', created_at: now };
+      } catch (error) {
+        console.error('Failed to create clan:', error);
+        throw error;
+      }
+    });
+
+    ipcMain.handle('clans:getAll', () => {
+      try {
+        const db = require('./database').getDb();
+        return db.prepare('SELECT * FROM clans ORDER BY created_at DESC').all();
+      } catch {
+        return [];
+      }
+    });
+
+    ipcMain.handle('clans:getMembers', (_, clanId: string) => {
+      try {
+        const db = require('./database').getDb();
+        const members = db.prepare(`
+          SELECT cm.clan_id, cm.friend_id, cm.role, f.username, f.avatar_url as avatar, f.status
+          FROM clan_members cm
+          LEFT JOIN friends f ON cm.friend_id = f.id
+          WHERE cm.clan_id = ?
+          ORDER BY CASE cm.role WHEN 'leader' THEN 0 WHEN 'officer' THEN 1 ELSE 2 END
+        `).all(clanId);
+        return members;
+      } catch {
+        return [];
+      }
+    });
+
+    ipcMain.handle('clans:addMember', (_, clanId: string, friendId: string) => {
+      try {
+        const db = require('./database').getDb();
+        db.prepare('INSERT OR IGNORE INTO clan_members (clan_id, friend_id, role) VALUES (?, ?, ?)').run(clanId, friendId, 'member');
+        return { success: true };
+      } catch (error) {
+        console.error('Failed to add clan member:', error);
+        throw error;
+      }
+    });
+
+    ipcMain.handle('clans:removeMember', (_, clanId: string, friendId: string) => {
+      try {
+        const db = require('./database').getDb();
+        db.prepare('DELETE FROM clan_members WHERE clan_id = ? AND friend_id = ?').run(clanId, friendId);
+        return { success: true };
+      } catch (error) {
+        console.error('Failed to remove clan member:', error);
+        throw error;
+      }
+    });
+
+    ipcMain.handle('clans:getChat', (_, clanId: string) => {
+      try {
+        const db = require('./database').getDb();
+        return db.prepare('SELECT * FROM clan_messages WHERE clan_id = ? ORDER BY timestamp ASC LIMIT 100').all(clanId);
+      } catch {
+        return [];
+      }
+    });
+
+    ipcMain.handle('clans:sendChat', (_, clanId: string, content: string) => {
+      try {
+        const db = require('./database').getDb();
+        const id = `msg_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+        const username = settingsManager.getAllSettings().account.username || 'Me';
+        db.prepare('INSERT INTO clan_messages (id, clan_id, sender, content, timestamp) VALUES (?, ?, ?, ?, ?)').run(
+          id, clanId, username, content, Date.now()
+        );
+        return { success: true };
+      } catch (error) {
+        console.error('Failed to send clan chat:', error);
+        throw error;
+      }
     });
 
     // Shell helpers
@@ -1454,6 +1851,340 @@ app.whenReady().then(async () => {
     });
     ipcMain.handle('shell:openExternal', async (_, url: string) => {
       try { await shell.openExternal(url); return { ok: true }; } catch (err) { return { ok: false, err: String(err) }; }
+    });
+
+    // Audio Service IPC Handlers
+    ipcMain.handle('audio:getDevices', async () => {
+        try {
+          return await audioService.getDevices();
+        } catch (error) {
+          console.error('Failed to get audio devices:', error);
+          return [];
+        }
+    });
+
+    ipcMain.handle('audio:setDefault', async (_, deviceId: string) => {
+        try {
+          return await audioService.setDefault(deviceId);
+        } catch (error) {
+          console.error('Failed to set default audio device:', error);
+          return { success: false, error: String(error) };
+        }
+    });
+
+    // Network Service IPC Handlers
+    ipcMain.handle('network:pingTest', async () => {
+        try {
+          return await networkService.pingTest();
+        } catch (error) {
+          console.error('Failed to run ping test:', error);
+          return [];
+        }
+    });
+
+    ipcMain.handle('network:flushDns', async () => {
+        try {
+          return await networkService.flushDns();
+        } catch (error) {
+          console.error('Failed to flush DNS:', error);
+          return { success: false, output: String(error) };
+        }
+    });
+
+    ipcMain.handle('network:getDnsInfo', async () => {
+        try {
+          return await networkService.getDnsInfo();
+        } catch (error) {
+          console.error('Failed to get DNS info:', error);
+          return { currentServers: [], recommended: [] };
+        }
+    });
+
+    // Compatibility Service IPC Handlers
+    ipcMain.handle('compat:getWindowsInfo', async () => {
+        try {
+          return await compatibilityService.getWindowsInfo();
+        } catch (error) {
+          console.error('Failed to get Windows info:', error);
+          return { version: 'Unknown', build: '', arch: '' };
+        }
+    });
+
+    ipcMain.handle('compat:getSettings', async (_, gameId: string, executablePath: string) => {
+        try {
+          return await compatibilityService.getSettings(gameId, executablePath);
+        } catch (error) {
+          console.error('Failed to get compatibility settings:', error);
+          throw error;
+        }
+    });
+
+    ipcMain.handle('compat:setMode', async (_, gameId: string, executablePath: string, mode: string, options?: any) => {
+        try {
+          return await compatibilityService.setMode(gameId, executablePath, mode as any, options);
+        } catch (error) {
+          console.error('Failed to set compatibility mode:', error);
+          return { success: false, error: String(error) };
+        }
+    });
+
+    // Calendar IPC - aggregates events from sessions and expense tracker
+    ipcMain.handle('calendar:getEvents', async (_, year: number, month: number) => {
+        try {
+            const sessions = gamingSessionService.getSessionsForMonth(year, month);
+            const sessionEvents = sessions.map(s => ({
+                id: s.id,
+                date: s.startTime,
+                title: s.title,
+                type: 'session' as const,
+                description: s.gameName ? `Playing ${s.gameName}` : s.description,
+                gameName: s.gameName,
+            }));
+            return sessionEvents;
+        } catch (error) {
+            console.error('Failed to get calendar events:', error);
+            return [];
+        }
+    });
+
+    // Wellness Time Limit IPC Handlers
+    ipcMain.handle('wellness:setLimit', async (_, limitData: { dailyLimitHours: number; enabled: boolean }) => {
+        try {
+            settingsManager.updateSetting('wellness', limitData);
+            return { success: true };
+        } catch (error) {
+            console.error('Failed to set wellness limit:', error);
+            throw error;
+        }
+    });
+
+    ipcMain.handle('wellness:getStatus', async () => {
+        try {
+            const settings = settingsManager.getAllSettings() as any;
+            return settings?.wellness || { dailyLimitHours: 4, enabled: false };
+        } catch (error) {
+            console.error('Failed to get wellness status:', error);
+            return { dailyLimitHours: 4, enabled: false };
+        }
+    });
+
+    ipcMain.handle('wellness:checkLimit', async (_, currentMinutes: number) => {
+        try {
+            const settings = settingsManager.getAllSettings() as any;
+            const wellness = settings?.wellness || { dailyLimitHours: 4, enabled: false };
+            if (!wellness.enabled) return { status: 'ok', percentage: 0 };
+            
+            const limitMinutes = wellness.dailyLimitHours * 60;
+            const percentage = (currentMinutes / limitMinutes) * 100;
+            
+            if (percentage >= 100) {
+                notificationService.showNotification({
+                    title: 'Daily Limit Reached!',
+                    body: 'You\'ve hit your daily gaming time limit. Time for a break!',
+                    urgency: 'critical'
+                }, 'wellness-limit');
+                return { status: 'exceeded', percentage };
+            } else if (percentage >= 80) {
+                notificationService.showNotification({
+                    title: 'Approaching Daily Limit',
+                    body: `You've used ${Math.round(percentage)}% of your daily gaming time.`,
+                    urgency: 'normal'
+                }, 'wellness-warning');
+                return { status: 'warning', percentage };
+            }
+            return { status: 'ok', percentage };
+        } catch (error) {
+            console.error('Failed to check wellness limit:', error);
+            return { status: 'ok', percentage: 0 };
+        }
+    });
+
+    // ── Shader Service IPC ──
+    ipcMain.handle('shaders:getPresets', async (_, gameId: string) => {
+        try {
+            return shaderService.getShaderPresets(gameId);
+        } catch (error) {
+            console.error('Failed to get shader presets:', error);
+            return [];
+        }
+    });
+
+    ipcMain.handle('shaders:install', async (_, gameId: string, presetPath: string) => {
+        try {
+            return await shaderService.installPreset(gameId, presetPath);
+        } catch (error) {
+            console.error('Failed to install shader preset:', error);
+            throw error;
+        }
+    });
+
+    ipcMain.handle('shaders:remove', async (_, gameId: string, presetId?: string) => {
+        try {
+            return shaderService.removePreset(gameId, presetId);
+        } catch (error) {
+            console.error('Failed to remove shader preset:', error);
+            return false;
+        }
+    });
+
+    ipcMain.handle('shaders:getAvailable', async (_, gameInstallPath?: string) => {
+        try {
+            return shaderService.getAvailablePresets(gameInstallPath);
+        } catch (error) {
+            console.error('Failed to get available presets:', error);
+            return [];
+        }
+    });
+
+    // ── UI Scaler IPC ──
+    ipcMain.handle('uiscaler:getDisplayInfo', async () => {
+        try {
+            return await uiScalerService.getDisplayInfo();
+        } catch (error) {
+            console.error('Failed to get display info:', error);
+            throw error;
+        }
+    });
+
+    ipcMain.handle('uiscaler:getRecommendation', async () => {
+        try {
+            return await uiScalerService.getRecommendation();
+        } catch (error) {
+            console.error('Failed to get UI scale recommendation:', error);
+            throw error;
+        }
+    });
+
+    // ── Hardware Compatibility IPC ──
+    ipcMain.handle('compat:checkGame', async (_, gameId: string) => {
+        try {
+            return await hardwareCompatService.checkGame(gameId);
+        } catch (error) {
+            console.error('Failed to check game compatibility:', error);
+            throw error;
+        }
+    });
+
+    ipcMain.handle('compat:getSystemSpecs', async () => {
+        try {
+            return await hardwareCompatService.getSystemSpecs();
+        } catch (error) {
+            console.error('Failed to get system specs:', error);
+            throw error;
+        }
+    });
+
+    ipcMain.handle('compat:setRequirements', async (_, gameId: string, reqs: any) => {
+        try {
+            hardwareCompatService.setGameRequirements(gameId, reqs);
+            return { success: true };
+        } catch (error) {
+            console.error('Failed to set game requirements:', error);
+            throw error;
+        }
+    });
+
+    // ── Power Consumption IPC ──
+    ipcMain.handle('power:getEstimate', async () => {
+        try {
+            return await hardwareMonitor.getPowerEstimate();
+        } catch (error) {
+            console.error('Failed to get power estimate:', error);
+            throw error;
+        }
+    });
+
+    ipcMain.handle('power:getHistory', async (_, limit?: number) => {
+        try {
+            return hardwareMonitor.getPowerHistory(limit);
+        } catch (error) {
+            console.error('Failed to get power history:', error);
+            return [];
+        }
+    });
+
+    ipcMain.handle('power:startTracking', async (_, gameId?: string) => {
+        try {
+            return hardwareMonitor.startPowerTracking(gameId);
+        } catch (error) {
+            console.error('Failed to start power tracking:', error);
+            throw error;
+        }
+    });
+
+    ipcMain.handle('power:stopTracking', async () => {
+        try {
+            return hardwareMonitor.stopPowerTracking();
+        } catch (error) {
+            console.error('Failed to stop power tracking:', error);
+            throw error;
+        }
+    });
+
+    // ── Storage IPC ──
+    ipcMain.handle('storage:getDrives', async () => {
+        try {
+            return await DriveScanner.getDrivesDetailed();
+        } catch (error) {
+            console.error('Failed to get drives:', error);
+            return [];
+        }
+    });
+
+    ipcMain.handle('storage:getGameSizes', async () => {
+        try {
+            return await DriveScanner.getGameSizes();
+        } catch (error) {
+            console.error('Failed to get game sizes:', error);
+            return [];
+        }
+    });
+
+    ipcMain.handle('storage:moveGame', async (_, gameId: string, targetDrive: string) => {
+        try {
+            return await DriveScanner.moveGame(gameId, targetDrive);
+        } catch (error) {
+            console.error('Failed to move game:', error);
+            return { success: false, error: String(error) };
+        }
+    });
+
+    // ── Game-Type Performance Profiles IPC ──
+    ipcMain.handle('performance:getGameProfiles', async () => {
+        try {
+            return performanceService.getGameProfiles();
+        } catch (error) {
+            console.error('Failed to get game profiles:', error);
+            return [];
+        }
+    });
+
+    ipcMain.handle('performance:applyGameProfile', async (_, profileId: string, gameExecutable?: string) => {
+        try {
+            return await performanceService.applyGameProfile(profileId, gameExecutable);
+        } catch (error) {
+            console.error('Failed to apply game profile:', error);
+            return { success: false, actions: ['Error applying profile'] };
+        }
+    });
+
+    // ── Dynamic Resource Allocation IPC ──
+    ipcMain.handle('performance:startDynamicMode', async (_, gamePid?: number, gameExecutable?: string) => {
+        try {
+            return await processManagerInstance.startDynamicMode(gamePid, gameExecutable);
+        } catch (error) {
+            console.error('Failed to start dynamic mode:', error);
+            return { success: false, message: String(error) };
+        }
+    });
+
+    ipcMain.handle('performance:stopDynamicMode', async () => {
+        try {
+            return await processManagerInstance.stopDynamicMode();
+        } catch (error) {
+            console.error('Failed to stop dynamic mode:', error);
+            return { success: false, restored: 0 };
+        }
     });
 
     // Connect Services

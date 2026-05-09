@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
-import { CheckCircle2, Download, RefreshCw, AlertTriangle, Cpu, MonitorSmartphone, Volume2, Network, ExternalLink } from 'lucide-react';
+import { CheckCircle2, Download, RefreshCw, AlertTriangle, Cpu, MonitorSmartphone, Volume2, Network, ExternalLink, Globe } from 'lucide-react';
 
 type DriverStatus = 'up-to-date' | 'update-available' | 'critical' | 'unknown';
 type DriverKind = 'gpu' | 'chipset' | 'audio' | 'network';
@@ -19,6 +19,13 @@ interface DriverEntry {
 }
 
 const STORAGE_KEY = 'raeen.drivers.v1';
+
+const VENDOR_LINKS: Record<string, { label: string; url: string }> = {
+  NVIDIA:   { label: 'NVIDIA Drivers',  url: 'https://www.nvidia.com/Download/index.aspx' },
+  AMD:      { label: 'AMD Drivers',     url: 'https://www.amd.com/en/support' },
+  Intel:    { label: 'Intel Drivers',   url: 'https://www.intel.com/content/www/us/en/download-center/home.html' },
+  Realtek:  { label: 'Realtek Drivers', url: 'https://www.realtek.com/en/downloads' },
+};
 
 const seed = (): DriverEntry[] => ([
   { id: 'd_gpu',      kind: 'gpu',      vendor: 'NVIDIA',     device: 'GeForce RTX 4070',           current: '551.86',  latest: '566.14',   status: 'update-available', size: 800e6, releaseNotesUrl: 'https://www.nvidia.com/Download/index.aspx' },
@@ -48,6 +55,7 @@ const DriverUpdater: React.FC = () => {
   const [checking, setChecking] = useState(false);
   const [installing, setInstalling] = useState<Set<string>>(new Set());
   const [autoUpdate, setAutoUpdate] = useState(false);
+  const [lastChecked, setLastChecked] = useState<Date | null>(null);
 
   useEffect(() => {
     try {
@@ -55,6 +63,10 @@ const DriverUpdater: React.FC = () => {
       setDrivers(cached ? JSON.parse(cached) : seed());
     } catch { setDrivers(seed()); }
     setAutoUpdate(localStorage.getItem('raeen.drivers.auto') === 'true');
+    try {
+      const lc = localStorage.getItem('raeen.drivers.lastChecked');
+      if (lc) setLastChecked(new Date(lc));
+    } catch {}
   }, []);
 
   useEffect(() => { localStorage.setItem(STORAGE_KEY, JSON.stringify(drivers)); }, [drivers]);
@@ -64,14 +76,21 @@ const DriverUpdater: React.FC = () => {
     const updates = drivers.filter(d => d.status === 'update-available' || d.status === 'critical').length;
     const critical = drivers.filter(d => d.status === 'critical').length;
     const totalSize = drivers.filter(d => d.status !== 'up-to-date').reduce((s, d) => s + (d.size || 0), 0);
-    return { updates, critical, totalSize };
+    const upToDate = drivers.filter(d => d.status === 'up-to-date').length;
+    return { updates, critical, totalSize, upToDate };
   }, [drivers]);
 
   const checkForUpdates = async () => {
     setChecking(true);
     try {
-      const result = await window.ipcRenderer.invoke('drivers:check').catch(() => null);
+      const result = await window.ipcRenderer.invoke('drivers:checkUpdates').catch(() => null);
       if (Array.isArray(result) && result.length) setDrivers(result);
+      else {
+        const fallback = await window.ipcRenderer.invoke('drivers:check').catch(() => null);
+        if (Array.isArray(fallback) && fallback.length) setDrivers(fallback);
+      }
+      setLastChecked(new Date());
+      localStorage.setItem('raeen.drivers.lastChecked', new Date().toISOString());
     } finally {
       setChecking(false);
     }
@@ -93,12 +112,22 @@ const DriverUpdater: React.FC = () => {
     for (const d of pending) await installDriver(d.id);
   };
 
+  const openVendorPage = (vendor: string) => {
+    const link = VENDOR_LINKS[vendor];
+    if (link) window.ipcRenderer.invoke('shell:openExternal', link.url);
+  };
+
+  const uniqueVendors = useMemo(() => Array.from(new Set(drivers.map(d => d.vendor))).filter(v => VENDOR_LINKS[v]), [drivers]);
+
   return (
     <div className="flex flex-col h-full overflow-hidden">
       <div className="flex justify-between items-end mb-6">
         <div>
           <h1 className="text-4xl font-black text-white tracking-tighter drop-shadow-md mb-2">DRIVER UPDATER</h1>
-          <p className="text-gray-400 font-medium">Keep gaming-critical drivers current — GPU, chipset, audio, network</p>
+          <p className="text-gray-400 font-medium">
+            Keep gaming-critical drivers current — GPU, chipset, audio, network
+            {lastChecked && <span className="text-gray-600 ml-2">• Last checked {lastChecked.toLocaleString()}</span>}
+          </p>
         </div>
         <div className="flex gap-2">
           <button onClick={checkForUpdates} disabled={checking}
@@ -112,12 +141,29 @@ const DriverUpdater: React.FC = () => {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
         <Stat label="Drivers Tracked" value={`${drivers.length}`} icon={<Cpu size={18} />} />
+        <Stat label="Up to Date" value={`${summary.upToDate}`} icon={<CheckCircle2 size={18} />} tone={summary.upToDate === drivers.length ? 'text-green-300' : ''} />
         <Stat label="Updates Available" value={`${summary.updates}`} icon={<Download size={18} />} tone={summary.updates ? 'text-blue-300' : ''} />
         <Stat label="Critical" value={`${summary.critical}`} icon={<AlertTriangle size={18} />} tone={summary.critical ? 'text-red-300' : ''} />
         <Stat label="Download Size" value={formatMb(summary.totalSize)} icon={<Download size={18} />} />
       </div>
+
+      {/* Vendor Quick Links */}
+      {uniqueVendors.length > 0 && (
+        <div className="glass-frosted rounded-2xl px-4 py-3 mb-4 flex items-center gap-3 flex-wrap">
+          <span className="text-xs font-bold text-gray-500 uppercase tracking-wider flex items-center gap-1"><Globe size={12} /> Official Driver Pages</span>
+          {uniqueVendors.map(vendor => (
+            <button
+              key={vendor}
+              onClick={() => openVendorPage(vendor)}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-xs font-bold text-white transition"
+            >
+              {vendor} <ExternalLink size={10} />
+            </button>
+          ))}
+        </div>
+      )}
 
       <div className="glass-frosted rounded-2xl px-4 py-3 mb-6 flex items-center justify-between">
         <div>
@@ -152,6 +198,12 @@ const DriverUpdater: React.FC = () => {
                 <button onClick={() => window.ipcRenderer.invoke('shell:openExternal', d.releaseNotesUrl)}
                   title="Release notes" className="p-2 hover:bg-white/5 rounded-lg text-gray-400 hover:text-white">
                   <ExternalLink size={14} />
+                </button>
+              )}
+              {VENDOR_LINKS[d.vendor] && (
+                <button onClick={() => openVendorPage(d.vendor)}
+                  title={`Open ${d.vendor} driver page`} className="p-2 hover:bg-white/5 rounded-lg text-gray-400 hover:text-white">
+                  <Globe size={14} />
                 </button>
               )}
               {d.status === 'up-to-date' ? (

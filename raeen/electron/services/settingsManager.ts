@@ -13,6 +13,7 @@ export interface UserSettings {
     theme: 'dark' | 'light' | 'cyberpunk' | 'midnight';
     enableTransparency: boolean;
     animatedBackgrounds: boolean;
+    enableParticles: boolean;
     customBackground?: string;
     blurLevel: 'low' | 'medium' | 'high';
     overlayOpacity: number;
@@ -63,6 +64,7 @@ const DEFAULT_SETTINGS: UserSettings = {
     theme: 'dark',
     enableTransparency: true,
     animatedBackgrounds: true,
+    enableParticles: true,
     customBackground: '',
     blurLevel: 'medium',
     overlayOpacity: 0.6,

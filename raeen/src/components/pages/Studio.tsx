@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Play, Pause, RotateCcw, Scissors, Upload, Film, Wifi, WifiOff, Tv, Video as VideoIcon, Radio, Disc, AlertTriangle, RefreshCw } from 'lucide-react';
+import { Play, Pause, RotateCcw, Scissors, Upload, Film, Wifi, WifiOff, Tv, Video as VideoIcon, Radio, Disc, AlertTriangle, RefreshCw, Combine, Plus, Trash2, Sparkles } from 'lucide-react';
 import { useSettingsStore } from '../../stores/settingsStore';
 
 interface VideoMetadata {
@@ -46,8 +46,20 @@ const Studio: React.FC = () => {
     const [streamStatus, setStreamStatus] = useState<ObsStreamStatus | null>(null);
     const [obsIsLoading, setObsIsLoading] = useState(false);
 
+    // Highlight Compiler States
+    const [highlightClips, setHighlightClips] = useState<string[]>([]);
+    const [highlightTransition, setHighlightTransition] = useState('none');
+    const [isCompiling, setIsCompiling] = useState(false);
+    const [compileOutput, setCompileOutput] = useState<string | null>(null);
+
+    // Stream Title Generator States
+    const [titleGame, setTitleGame] = useState('');
+    const [titleMood, setTitleMood] = useState('chill');
+    const [titleStyle, setTitleStyle] = useState('minimal');
+    const [generatedTitle, setGeneratedTitle] = useState<string | null>(null);
+    const [titleHistory, setTitleHistory] = useState<Array<{ title: string; gameName: string; createdAt: string }>>([]);
+
     useEffect(() => {
-        // Load initial OBS config and check connection status
         checkObsConnectionStatus();
     }, []);
 
@@ -236,6 +248,58 @@ const Studio: React.FC = () => {
         }
     };
 
+    // Highlight Compiler Handlers
+    const handleAddClips = async () => {
+        try {
+            const result = await window.ipcRenderer.invoke('dialog:openFiles', { filters: [{ name: 'Video', extensions: ['mp4', 'mkv', 'avi', 'webm', 'mov'] }] });
+            if (result && result.length > 0) {
+                setHighlightClips(prev => [...prev, ...result]);
+            }
+        } catch (e) {
+            console.error('Failed to select clips:', e);
+        }
+    };
+
+    const handleRemoveClip = (index: number) => {
+        setHighlightClips(prev => prev.filter((_, i) => i !== index));
+    };
+
+    const handleCompileHighlights = async () => {
+        if (highlightClips.length < 2) return;
+        const outputDir = await window.ipcRenderer.invoke('dialog:openDirectory');
+        if (!outputDir) return;
+
+        const outputPath = `${outputDir}\\highlights_${Date.now()}.mp4`;
+        setIsCompiling(true);
+        setCompileOutput(null);
+        try {
+            const result = await window.ipcRenderer.invoke('video:compileHighlights', highlightClips, outputPath, highlightTransition);
+            setCompileOutput(result);
+        } catch (e) {
+            console.error('Highlight compilation failed:', e);
+            alert('Failed to compile highlights. See console for details.');
+        } finally {
+            setIsCompiling(false);
+        }
+    };
+
+    // Stream Title Generator Handlers
+    const handleGenerateTitle = async () => {
+        if (!titleGame.trim()) return;
+        try {
+            const title = await window.ipcRenderer.invoke('stream:generateTitle', titleGame, titleMood, titleStyle);
+            setGeneratedTitle(title);
+            const history = await window.ipcRenderer.invoke('stream:getTitleHistory');
+            setTitleHistory(history.slice(0, 10));
+        } catch (e) {
+            console.error('Failed to generate title:', e);
+        }
+    };
+
+    const copyTitle = (text: string) => {
+        navigator.clipboard.writeText(text);
+    };
+
     const formatTime = (timeInSeconds: number) => {
         const minutes = Math.floor(timeInSeconds / 60);
         const seconds = Math.floor(timeInSeconds % 60);
@@ -245,13 +309,13 @@ const Studio: React.FC = () => {
 
 
     return (
-        <div className="glass-panel flex-1 h-full overflow-hidden flex flex-col p-6 gap-6">
+        <div className="glass-panel flex-1 h-full overflow-y-auto custom-scrollbar flex flex-col p-6 gap-6">
             <h1 className="text-3xl font-bold text-white flex items-center gap-3">
                 <Film className="text-purple-500" size={32} />
                 Clip Studio
             </h1>
 
-            <div className="grid grid-cols-2 gap-6 flex-1 overflow-hidden">
+            <div className="grid grid-cols-2 gap-6 flex-1 min-h-0">
                 {/* Left Panel: Video Editor */}
                 <div className="flex flex-col bg-black/20 border border-white/10 rounded-xl p-4">
                     <h2 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
@@ -469,6 +533,128 @@ const Studio: React.FC = () => {
                             </button>
                         </div>
                     )}
+                </div>
+            </div>
+
+            {/* Bottom Section: Highlights + Title Generator */}
+            <div className="grid grid-cols-2 gap-6 mt-2">
+                {/* Compile Highlights */}
+                <div className="bg-black/20 border border-white/10 rounded-xl p-4">
+                    <h2 className="text-lg font-bold text-white mb-3 flex items-center gap-2">
+                        <Combine size={20} className="text-amber-400" /> Compile Highlights
+                    </h2>
+                    <div className="space-y-3">
+                        <div className="flex gap-2">
+                            <button
+                                onClick={handleAddClips}
+                                className="flex items-center gap-1.5 px-3 py-1.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-xs text-white transition-colors"
+                            >
+                                <Plus size={12} /> Add Clips
+                            </button>
+                            <select
+                                value={highlightTransition}
+                                onChange={e => setHighlightTransition(e.target.value)}
+                                className="bg-black/40 border border-white/10 rounded-lg px-2 py-1.5 text-xs text-white focus:outline-none"
+                            >
+                                <option value="none">No Transition</option>
+                                <option value="fade">Fade</option>
+                                <option value="dissolve">Dissolve</option>
+                                <option value="wipe">Wipe</option>
+                            </select>
+                        </div>
+
+                        {highlightClips.length > 0 && (
+                            <div className="max-h-24 overflow-y-auto custom-scrollbar space-y-1">
+                                {highlightClips.map((clip, i) => (
+                                    <div key={i} className="flex items-center gap-2 px-2 py-1 bg-white/[0.03] rounded text-xs text-gray-300">
+                                        <Film size={10} className="text-amber-400 flex-shrink-0" />
+                                        <span className="truncate flex-1">{clip.split(/[/\\]/).pop()}</span>
+                                        <button onClick={() => handleRemoveClip(i)} className="text-red-400 hover:text-red-300">
+                                            <Trash2 size={10} />
+                                        </button>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+
+                        <button
+                            onClick={handleCompileHighlights}
+                            disabled={isCompiling || highlightClips.length < 2}
+                            className="w-full flex items-center justify-center gap-2 px-3 py-2.5 bg-amber-600 hover:bg-amber-500 text-white rounded-lg text-sm font-bold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                            {isCompiling ? <RotateCcw size={14} className="animate-spin" /> : <Combine size={14} />}
+                            {isCompiling ? 'Compiling...' : `Compile ${highlightClips.length} Clips`}
+                        </button>
+
+                        {compileOutput && (
+                            <div className="p-2 bg-green-900/20 border border-green-500/30 rounded-lg text-xs text-green-200 truncate">
+                                Saved: {compileOutput}
+                            </div>
+                        )}
+                    </div>
+                </div>
+
+                {/* Stream Title Generator */}
+                <div className="bg-black/20 border border-white/10 rounded-xl p-4">
+                    <h2 className="text-lg font-bold text-white mb-3 flex items-center gap-2">
+                        <Sparkles size={20} className="text-yellow-300" /> Stream Title Generator
+                    </h2>
+                    <div className="space-y-3">
+                        <input
+                            type="text"
+                            value={titleGame}
+                            onChange={e => setTitleGame(e.target.value)}
+                            placeholder="Game name..."
+                            className="w-full bg-black/40 border border-white/10 rounded-lg p-2 text-white text-sm focus:outline-none focus:border-blue-500/40"
+                        />
+                        <div className="grid grid-cols-2 gap-2">
+                            <select value={titleMood} onChange={e => setTitleMood(e.target.value)}
+                                className="bg-black/40 border border-white/10 rounded-lg p-1.5 text-xs text-white focus:outline-none">
+                                <option value="chill">Chill</option>
+                                <option value="competitive">Competitive</option>
+                                <option value="first-time">First Time</option>
+                                <option value="speedrun">Speedrun</option>
+                                <option value="funny">Funny</option>
+                                <option value="horror">Horror</option>
+                                <option value="grinding">Grinding</option>
+                            </select>
+                            <select value={titleStyle} onChange={e => setTitleStyle(e.target.value)}
+                                className="bg-black/40 border border-white/10 rounded-lg p-1.5 text-xs text-white focus:outline-none">
+                                <option value="minimal">Minimal</option>
+                                <option value="energetic">Energetic</option>
+                                <option value="professional">Professional</option>
+                                <option value="clickbait">Clickbait</option>
+                            </select>
+                        </div>
+                        <button
+                            onClick={handleGenerateTitle}
+                            disabled={!titleGame.trim()}
+                            className="w-full flex items-center justify-center gap-2 px-3 py-2.5 bg-purple-600 hover:bg-purple-500 text-white rounded-lg text-sm font-bold transition-colors disabled:opacity-50"
+                        >
+                            <Sparkles size={14} /> Generate Title
+                        </button>
+
+                        {generatedTitle && (
+                            <div
+                                onClick={() => copyTitle(generatedTitle)}
+                                className="p-2.5 bg-purple-900/20 border border-purple-500/30 rounded-lg text-sm text-purple-200 cursor-pointer hover:bg-purple-900/30 transition-colors"
+                                title="Click to copy"
+                            >
+                                {generatedTitle}
+                            </div>
+                        )}
+
+                        {titleHistory.length > 0 && (
+                            <div className="max-h-16 overflow-y-auto custom-scrollbar space-y-0.5">
+                                {titleHistory.slice(1, 5).map((h, i) => (
+                                    <div key={i} onClick={() => copyTitle(h.title)}
+                                        className="text-[10px] text-gray-400 truncate cursor-pointer hover:text-white px-1 py-0.5 rounded hover:bg-white/5 transition-colors">
+                                        {h.title}
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
                 </div>
             </div>
         </div>

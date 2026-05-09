@@ -12,6 +12,7 @@ export interface UserSettings {
         theme: 'dark' | 'light' | 'cyberpunk' | 'midnight';
         enableTransparency: boolean;
         animatedBackgrounds: boolean;
+        enableParticles?: boolean;
         customBackground?: string;
         blurLevel?: 'low' | 'medium' | 'high';
         overlayOpacity?: number;

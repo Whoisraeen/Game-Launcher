@@ -44,7 +44,25 @@ import CrosshairOverlay from './components/pages/CrosshairOverlay';
 import Wellness from './components/pages/Wellness';
 import Rotation from './components/pages/RotationScheduler';
 import Reviews from './components/pages/Reviews';
+import SessionPlanner from './components/pages/SessionPlanner';
+import ReactionTest from './components/pages/ReactionTest';
+import KeybindManager from './components/pages/KeybindManager';
+import AudioSwitcher from './components/pages/AudioSwitcher';
+import NetworkOptimizer from './components/pages/NetworkOptimizer';
+import InputLagTest from './components/pages/InputLagTest';
+import GameCalendar from './components/pages/GameCalendar';
+import FOVCalculator from './components/pages/FOVCalculator';
+import StreamSchedule from './components/pages/StreamSchedule';
+import ChatOverlay from './components/pages/ChatOverlay';
+import ThumbnailCreator from './components/pages/ThumbnailCreator';
+import StreamOverlays from './components/pages/StreamOverlays';
 import CommandPalette from './components/CommandPalette';
+import ThemeStore from './components/pages/ThemeStore';
+import ProUpgrade from './components/pages/ProUpgrade';
+import ClanManager from './components/pages/ClanManager';
+import BuddyFinder from './components/pages/BuddyFinder';
+import MonitorCalibration from './components/MonitorCalibration';
+import ParticleBackground from './components/ParticleBackground';
 
 const RECENT_KEY = 'raeen.recentPages.v1';
 const SECTION_HOTKEYS: Record<string, string> = {
@@ -180,17 +198,34 @@ function App() {
       case 'Backlog': return <Backlog />;
       case 'Goals': return <PlaytimeGoals />;
       case 'Rotation': return <Rotation />;
+      case 'SessionPlanner': return <SessionPlanner />;
       case 'ShaderCache': return <ShaderCache />;
       case 'Drivers': return <DriverUpdater />;
       case 'AimTrainer': return <AimTrainer />;
       case 'Crosshair': return <CrosshairOverlay />;
+      case 'ReactionTest': return <ReactionTest />;
+      case 'KeybindManager': return <KeybindManager />;
       case 'Reviews': return <Reviews />;
       case 'Wellness': return <Wellness />;
       case 'SaveManager': return <SaveManager />;
       case 'Studio': return <Studio />;
       case 'HardwareLab': return <HardwareLab />;
       case 'Troubleshooter': return <Troubleshooter />;
+      case 'AudioSwitcher': return <AudioSwitcher />;
+      case 'NetworkOptimizer': return <NetworkOptimizer />;
+      case 'InputLagTest': return <InputLagTest />;
+      case 'Calendar': return <GameCalendar />;
       case 'Settings': return <Settings />;
+      case 'FOVCalculator': return <FOVCalculator />;
+      case 'StreamSchedule': return <StreamSchedule />;
+      case 'ChatOverlay': return <ChatOverlay />;
+      case 'ThumbnailCreator': return <ThumbnailCreator />;
+      case 'StreamOverlays': return <StreamOverlays />;
+      case 'ThemeStore': return <ThemeStore />;
+      case 'ProUpgrade': return <ProUpgrade />;
+      case 'ClanManager': return <ClanManager />;
+      case 'BuddyFinder': return <BuddyFinder />;
+      case 'MonitorCalibration': return <MonitorCalibration />;
       default: return <Library />;
     }
   };
@@ -212,13 +247,14 @@ function App() {
               className="absolute inset-0 w-full h-full object-cover scale-110 transition-all duration-1000"
               style={{ 
                   filter: `blur(${settings?.appearance.blurLevel === 'low' ? '8px' : settings?.appearance.blurLevel === 'high' ? '64px' : '32px'})`,
-                  opacity: 0.2 // Base opacity for the image itself
+                  opacity: 0.2
               }}
             />
             <div 
                 className="absolute inset-0 bg-gradient-to-t from-[var(--bg-primary)] via-[var(--bg-primary)]/80 to-[var(--bg-primary)]/40" 
                 style={{ opacity: settings?.appearance.overlayOpacity ?? 0.6 }}
             />
+            {settings?.appearance?.enableParticles !== false && <ParticleBackground />}
           </div>
 
           {/* Top Bar */}
