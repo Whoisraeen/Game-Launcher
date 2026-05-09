@@ -9,7 +9,7 @@ export interface UserSettings {
         autoDetectGames: boolean;
     };
     appearance: {
-        theme: 'dark' | 'light' | 'cyberpunk' | 'midnight';
+        theme: string;
         enableTransparency: boolean;
         animatedBackgrounds: boolean;
         enableParticles?: boolean;

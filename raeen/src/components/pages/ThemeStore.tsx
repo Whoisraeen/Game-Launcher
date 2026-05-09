@@ -46,13 +46,17 @@ const ThemeStore: React.FC = () => {
   const applyTheme = async (theme: ThemePreset) => {
     setApplying(theme.id);
     try {
-      await updateSetting('appearance', { accentColor: theme.accent });
+      await updateSetting('appearance', {
+        theme: theme.id as any,
+        accentColor: theme.accent,
+      });
     } finally {
       setTimeout(() => setApplying(null), 600);
     }
   };
 
-  const isActive = (theme: ThemePreset) => currentAccent === theme.accent;
+  const currentTheme = settings?.appearance?.theme || 'dark';
+  const isActive = (theme: ThemePreset) => currentTheme === theme.id || currentAccent === theme.accent;
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
