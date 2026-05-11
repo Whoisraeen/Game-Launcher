@@ -1,7 +1,8 @@
 import { getDb } from '../database';
 import fs from 'fs';
 import path from 'path';
-import { app } from 'electron';
+import { app, nativeImage } from 'electron';
+import { fileURLToPath } from 'node:url';
 
 export interface UserSettings {
   general: {
@@ -66,8 +67,8 @@ const DEFAULT_SETTINGS: UserSettings = {
     animatedBackgrounds: true,
     enableParticles: true,
     customBackground: '',
-    blurLevel: 'medium',
-    overlayOpacity: 0.6,
+    blurLevel: 'low',
+    overlayOpacity: 0,
     accentColor: '#4f46e5',
   },
   gameManagement: {
@@ -188,5 +189,65 @@ export class SettingsManager {
           console.error('Failed to upload background:', error);
           throw error;
       }
+  }
+
+  /** Same allow-list roots as `safe-file` protocol (must stay in sync). */
+  private getSafeBackgroundRoots(): string[] {
+    return [
+      app.getPath('userData'),
+      app.getPath('pictures'),
+      app.getPath('temp'),
+      app.getPath('home'),
+    ].map((p) => path.resolve(p));
+  }
+
+  /** Resolve stored launcher background reference to an absolute file path, or null. */
+  resolveAllowedBackgroundPath(stored: string): string | null {
+    const s = String(stored).trim();
+    if (!s || /^https?:\/\//i.test(s)) return null;
+    try {
+      let resolved: string;
+      if (/^safe-file:/i.test(s)) {
+        const asFile = s.replace(/^safe-file:/i, 'file:');
+        resolved = path.resolve(fileURLToPath(new URL(asFile)));
+      } else if (s.startsWith('file:')) {
+        resolved = path.resolve(fileURLToPath(new URL(s)));
+      } else if (/^[a-zA-Z]:[\\/]/.test(s)) {
+        resolved = path.resolve(s);
+      } else {
+        return null;
+      }
+
+      const rl = resolved.toLowerCase();
+      const allowed = this.getSafeBackgroundRoots().some((root) => {
+        const rootResolved = path.resolve(root).toLowerCase();
+        return rl.startsWith(rootResolved + path.sep) || rl === rootResolved;
+      });
+      if (!allowed || !fs.existsSync(resolved)) return null;
+      return resolved;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Raster reference suitable for <img src> in the renderer (data URL).
+   * Keeps payload reasonable by downsampling very wide images.
+   */
+  getBackgroundImageDataUrl(stored: string): string | null {
+    const abs = this.resolveAllowedBackgroundPath(stored);
+    if (!abs) return null;
+    try {
+      let img = nativeImage.createFromPath(abs);
+      if (img.isEmpty()) return null;
+      const { width } = img.getSize();
+      if (width > 2400) {
+        img = img.resize({ width: 2400 });
+      }
+      return img.toDataURL();
+    } catch (e) {
+      console.error('getBackgroundImageDataUrl failed:', e);
+      return null;
+    }
   }
 }

@@ -1,8 +1,14 @@
 import React, { useEffect, useState } from 'react';
-import { Monitor, User, Shield, Keyboard, Bell, Volume2, Database, RefreshCw, FolderOpen, Link, Zap, Palette, Upload, Image as ImageIcon, HeartPulse, Crosshair, MonitorSmartphone, HardDrive, Target } from 'lucide-react';
+import { Monitor, User, Shield, Keyboard, Bell, Volume2, Database, RefreshCw, FolderOpen, Link, Zap, Palette, Upload, Image as ImageIcon, HeartPulse, Crosshair, MonitorSmartphone, HardDrive, Target, Bug } from 'lucide-react';
 import { useSettingsStore, UserSettings } from '../../stores/settingsStore';
 import { useGameStore } from '../../stores/gameStore';
-import { resolveBackgroundUrl } from '../../utils/backgroundAssetUrl';
+import { useLauncherBackgroundSrc } from '../../hooks/useLauncherBackgroundSrc';
+import { BUG_REPORT_URL } from '../../constants/feedback';
+
+const AppearanceBackgroundPreview: React.FC<{ stored: string }> = ({ stored }) => {
+    const src = useLauncherBackgroundSrc(stored);
+    return <img src={src} alt="Custom Background" className="w-full h-full object-cover" />;
+};
 
 const Settings: React.FC = () => {
     const { settings, loadSettings, updateSetting, isLoading } = useSettingsStore();
@@ -233,6 +239,20 @@ const Settings: React.FC = () => {
                                     onChange={(v) => handleToggle('general', 'autoDetectGames', v)}
                                 />
                             </SettingGroup>
+
+                            <SettingGroup title="Feedback">
+                                <p className="text-sm text-gray-400 mb-3 max-w-lg">
+                                    Something broken or confusing? Open an issue so we can fix it.
+                                </p>
+                                <button
+                                    type="button"
+                                    onClick={() => window.ipcRenderer.invoke('shell:openExternal', BUG_REPORT_URL)}
+                                    className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white/10 hover:bg-white/15 border border-white/10 text-white text-sm font-semibold transition-colors"
+                                >
+                                    <Bug size={18} className="text-amber-400" />
+                                    Report a bug
+                                </button>
+                            </SettingGroup>
                         </div>
                     </div>
                 )}
@@ -273,12 +293,7 @@ const Settings: React.FC = () => {
                                 <div className="bg-black/20 border border-white/10 rounded-xl p-6 flex flex-col items-center gap-4">
                                     {settings.appearance.customBackground ? (
                                         <div className="relative w-full aspect-video rounded-lg overflow-hidden group">
-                                            <img 
-                                                key={resolveBackgroundUrl(settings.appearance.customBackground)}
-                                                src={resolveBackgroundUrl(settings.appearance.customBackground)} 
-                                                alt="Custom Background" 
-                                                className="w-full h-full object-cover"
-                                            />
+                                            <AppearanceBackgroundPreview stored={settings.appearance.customBackground} />
                                             <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-4">
                                                 <button 
                                                     onClick={handleUploadBackground}
@@ -317,7 +332,7 @@ const Settings: React.FC = () => {
                                     <div>
                                         <div className="flex justify-between text-sm mb-2">
                                             <span className="text-gray-300">Background Blur</span>
-                                            <span className="text-gray-400 capitalize">{settings.appearance.blurLevel || 'medium'}</span>
+                                            <span className="text-gray-400 capitalize">{settings.appearance.blurLevel || 'low'}</span>
                                         </div>
                                         <div className="grid grid-cols-3 gap-2">
                                             {['low', 'medium', 'high'].map((level) => (
@@ -326,7 +341,7 @@ const Settings: React.FC = () => {
                                                     onClick={() => handleSelect('appearance', 'blurLevel', level)}
                                                     className={`
                                                         py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-colors
-                                                        ${settings.appearance.blurLevel === level 
+                                                        ${(settings.appearance.blurLevel || 'low') === level
                                                             ? 'bg-white text-black' 
                                                             : 'bg-white/5 text-gray-400 hover:bg-white/10'}
                                                     `}
@@ -340,14 +355,14 @@ const Settings: React.FC = () => {
                                     <div>
                                         <div className="flex justify-between text-sm mb-2">
                                             <span className="text-gray-300">Overlay Opacity</span>
-                                            <span className="text-gray-400">{Math.round((settings.appearance.overlayOpacity || 0.6) * 100)}%</span>
+                                            <span className="text-gray-400">{Math.round((settings.appearance.overlayOpacity ?? 0) * 100)}%</span>
                                         </div>
                                         <input 
                                             type="range" 
                                             min="0" 
                                             max="1" 
                                             step="0.05"
-                                            value={settings.appearance.overlayOpacity || 0.6}
+                                            value={settings.appearance.overlayOpacity ?? 0}
                                             onChange={(e) => handleSelect('appearance', 'overlayOpacity', parseFloat(e.target.value))}
                                             className="w-full accent-blue-500 h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer"
                                         />

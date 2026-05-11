@@ -399,6 +399,15 @@ app.whenReady().then(async () => {
       }
     });
 
+    ipcMain.handle('settings:getBackgroundDataUrl', (_, stored: string) => {
+      try {
+        return settingsManager.getBackgroundImageDataUrl(stored);
+      } catch (error) {
+        console.error('settings:getBackgroundDataUrl failed:', error);
+        return null;
+      }
+    });
+
     ipcMain.handle('settings:reset', () => {
       return settingsManager.resetSettings();
     });

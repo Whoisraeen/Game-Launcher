@@ -45,10 +45,15 @@ export const useTheme = () => {
         document.body.style.color = theme['--text-primary'];
 
         // Apply blur & opacity settings
-        const blurVal = settings.appearance.blurLevel === 'low' ? '8px' : settings.appearance.blurLevel === 'high' ? '64px' : '32px';
+        const blurVal =
+            settings.appearance.blurLevel === 'high'
+                ? '64px'
+                : settings.appearance.blurLevel === 'medium'
+                  ? '32px'
+                  : '8px';
         root.style.setProperty('--bg-blur', blurVal);
 
-        const opacityVal = settings.appearance.overlayOpacity !== undefined ? settings.appearance.overlayOpacity.toString() : '0.6';
+        const opacityVal = settings.appearance.overlayOpacity !== undefined ? settings.appearance.overlayOpacity.toString() : '0';
         root.style.setProperty('--bg-opacity', opacityVal);
 
         // Glass border derived from accent

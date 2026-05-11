@@ -63,7 +63,8 @@ import ClanManager from './components/pages/ClanManager';
 import BuddyFinder from './components/pages/BuddyFinder';
 import MonitorCalibration from './components/MonitorCalibration';
 import ParticleBackground from './components/ParticleBackground';
-import { FALLBACK_LAUNCHER_BG, resolveBackgroundUrl } from './utils/backgroundAssetUrl';
+import { FALLBACK_LAUNCHER_BG } from './utils/backgroundAssetUrl';
+import { useLauncherBackgroundSrc } from './hooks/useLauncherBackgroundSrc';
 
 const RECENT_KEY = 'raeen.recentPages.v1';
 const SECTION_HOTKEYS: Record<string, string> = {
@@ -82,6 +83,8 @@ function App() {
   const { settings, loadSettings } = useSettingsStore();
   const { loadGames, initializeListeners } = useGameStore();
   const { toggleOverlay, isOverlayVisible } = usePerformanceStore();
+
+  const backgroundSrc = useLauncherBackgroundSrc(settings?.appearance?.customBackground ?? '');
 
   // Track recently visited pages
   const recordRecent = (page: string) => {
@@ -243,15 +246,21 @@ function App() {
           {/* Background */}
           <div className="absolute inset-0 z-0">
             <img
-              key={resolveBackgroundUrl(settings?.appearance.customBackground)}
-              src={resolveBackgroundUrl(settings?.appearance.customBackground)}
+              key={backgroundSrc}
+              src={backgroundSrc}
               alt="Background"
-              loading="lazy"
+              loading="eager"
               decoding="async"
               className="absolute inset-0 w-full h-full object-cover scale-110 transition-all duration-1000"
               style={{
-                  filter: `blur(${settings?.appearance.blurLevel === 'low' ? '8px' : settings?.appearance.blurLevel === 'high' ? '64px' : '32px'})`,
-                  opacity: 0.2
+                  filter: `blur(${
+                    settings?.appearance.blurLevel === 'high'
+                      ? '64px'
+                      : settings?.appearance.blurLevel === 'medium'
+                        ? '32px'
+                        : '8px'
+                  })`,
+                  opacity: 1,
               }}
               onLoad={(e) => {
                 // BUG-020: guard against absurdly large user backgrounds (OOM on low-RAM systems).
@@ -266,7 +275,7 @@ function App() {
             />
             <div
                 className="absolute inset-0 bg-gradient-to-t from-[var(--bg-primary)] via-[var(--bg-primary)]/80 to-[var(--bg-primary)]/40"
-                style={{ opacity: settings?.appearance.overlayOpacity ?? 0.6 }}
+                style={{ opacity: settings?.appearance.overlayOpacity ?? 0 }}
             />
             {settings?.appearance?.enableParticles !== false && <ParticleBackground />}
           </div>
