@@ -219,6 +219,12 @@ const GameGrid: React.FC = () => {
     const handleDragEnd = (event: DragEndEvent) => {
         const { active, over } = event;
         if (active.id !== over?.id && over) {
+            // BUG-005: persisting custom order is meaningless while another sort
+            // dictates the displayed order. Auto-switch to 'manual' so the new
+            // order actually shows up and survives reload.
+            if (sortBy !== 'manual') {
+                setSortBy('manual');
+            }
             reorderGames(active.id as string, over.id as string);
             saveGameOrder();
         }

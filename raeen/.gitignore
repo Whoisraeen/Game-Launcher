@@ -139,3 +139,23 @@ env/
 dist-electron/
 release/
 userData/
+
+# Local user data populated by the app at runtime — never commit
+emulation_data.json
+manual_games.json
+launcher.db
+*.sqlite
+*.sqlite3
+*.db-journal
+
+# Native module build outputs (.NET helpers in electron/native)
+electron/native/bin/
+electron/native/obj/
+electron/native/*.exe
+electron/native/*.dll
+electron/native/*.pdb
+
+# Local environment files (BUG-046)
+.env
+.env.*
+!.env.example

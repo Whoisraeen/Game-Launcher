@@ -81,7 +81,12 @@ const CommandPalette: React.FC<CommandPaletteProps> = ({ open, onClose, onNaviga
     { id: 'a:overlay',      type: 'action', label: 'Toggle Performance Overlay', icon: <Activity size={16} />,  onRun: () => { onToggleOverlay(); onClose(); } },
     { id: 'a:randomgame',   type: 'action', label: 'Quick Play (random game)',   icon: <Shuffle size={16} />,
       onRun: () => {
-        const playable = games.filter(g => !g.isHidden);
+        // BUG-026: only consider installed, non-hidden, non-dropped games.
+        const playable = games.filter(g =>
+          !g.isHidden &&
+          g.playStatus !== 'dropped' &&
+          (g.status === 'installed' || (g as any).isInstalled)
+        );
         if (!playable.length) return;
         const pick = playable[Math.floor(Math.random() * playable.length)];
         launchGame(pick.id); onClose();

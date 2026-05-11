@@ -44,46 +44,66 @@ const ParticleBackground: React.FC = () => {
         const resize = () => {
             canvas.width = canvas.offsetWidth * window.devicePixelRatio;
             canvas.height = canvas.offsetHeight * window.devicePixelRatio;
-            ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+            ctx.setTransform(window.devicePixelRatio, 0, 0, window.devicePixelRatio, 0, 0);
         };
         resize();
         window.addEventListener('resize', resize);
 
+        // BUG-022: pause the animation loop when:
+        //   • the window/tab is hidden,
+        //   • a game launch is in progress (custom 'raeen:gamelaunch-pending'/'raeen:gamelaunch-done' events).
+        // This keeps the main thread free during the moments that most
+        // affect input responsiveness without requiring a full OffscreenCanvas
+        // + Worker rewrite.
+        let paused = document.visibilityState !== 'visible';
+        let launching = false;
+
         const animate = () => {
-            const w = canvas.offsetWidth;
-            const h = canvas.offsetHeight;
-            ctx.clearRect(0, 0, w, h);
+            if (!paused && !launching) {
+                const w = canvas.offsetWidth;
+                const h = canvas.offsetHeight;
+                ctx.clearRect(0, 0, w, h);
 
-            for (const p of particlesRef.current) {
-                p.x += p.speedX;
-                p.y += p.speedY;
-                p.opacity += p.fadeDirection * 0.003;
+                for (const p of particlesRef.current) {
+                    p.x += p.speedX;
+                    p.y += p.speedY;
+                    p.opacity += p.fadeDirection * 0.003;
 
-                if (p.opacity >= 0.6) p.fadeDirection = -1;
-                if (p.opacity <= 0.05) p.fadeDirection = 1;
+                    if (p.opacity >= 0.6) p.fadeDirection = -1;
+                    if (p.opacity <= 0.05) p.fadeDirection = 1;
 
-                if (p.x < -5) p.x = 105;
-                if (p.x > 105) p.x = -5;
-                if (p.y < -5) p.y = 105;
-                if (p.y > 105) p.y = -5;
+                    if (p.x < -5) p.x = 105;
+                    if (p.x > 105) p.x = -5;
+                    if (p.y < -5) p.y = 105;
+                    if (p.y > 105) p.y = -5;
 
-                const px = (p.x / 100) * w;
-                const py = (p.y / 100) * h;
+                    const px = (p.x / 100) * w;
+                    const py = (p.y / 100) * h;
 
-                ctx.beginPath();
-                ctx.arc(px, py, p.size, 0, Math.PI * 2);
-                ctx.fillStyle = `rgba(255, 255, 255, ${p.opacity})`;
-                ctx.fill();
+                    ctx.beginPath();
+                    ctx.arc(px, py, p.size, 0, Math.PI * 2);
+                    ctx.fillStyle = `rgba(255, 255, 255, ${p.opacity})`;
+                    ctx.fill();
+                }
             }
-
             animRef.current = requestAnimationFrame(animate);
         };
+
+        const onVisibility = () => { paused = document.visibilityState !== 'visible'; };
+        const onLaunchStart = () => { launching = true; };
+        const onLaunchEnd = () => { launching = false; };
+        document.addEventListener('visibilitychange', onVisibility);
+        window.addEventListener('raeen:gamelaunch-pending', onLaunchStart);
+        window.addEventListener('raeen:gamelaunch-done', onLaunchEnd);
 
         animRef.current = requestAnimationFrame(animate);
 
         return () => {
             cancelAnimationFrame(animRef.current);
             window.removeEventListener('resize', resize);
+            document.removeEventListener('visibilitychange', onVisibility);
+            window.removeEventListener('raeen:gamelaunch-pending', onLaunchStart);
+            window.removeEventListener('raeen:gamelaunch-done', onLaunchEnd);
         };
     }, [particles]);
 

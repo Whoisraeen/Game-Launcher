@@ -24,7 +24,15 @@ const Overlay: React.FC = () => {
     if (!stats) return null;
 
     return (
-        <div className="p-4 bg-black/60 backdrop-blur-md rounded-xl text-white font-mono text-xs border border-white/10 shadow-lg select-none pointer-events-none animate-in fade-in">
+        // BUG-014: hint compositor for own layer + use transform for any future
+        // positioning (avoids layout-driven reflow flicker on multi-monitor).
+        // The overlay is rendered inside the main window today, but these
+        // properties stay correct if it's promoted to a separate frameless
+        // BrowserWindow later (the recommended fix for true multi-monitor).
+        <div
+            style={{ contain: 'layout paint', willChange: 'transform', transform: 'translateZ(0)' }}
+            className="p-4 bg-black/60 backdrop-blur-md rounded-xl text-white font-mono text-xs border border-white/10 shadow-lg select-none pointer-events-none animate-in fade-in"
+        >
             <div className="flex items-center gap-2 mb-2 text-blue-400 font-bold">
                 <Activity size={14} /> PERFORMANCE
             </div>

@@ -189,14 +189,52 @@ export class SupabaseService {
 
   /**
    * Sync local profile to cloud
+   *
+   * BUG-031: previously unconditionally upserted local → cloud, which silently
+   * overwrote newer settings made on another machine ("last-write-wins").
+   * Now we fetch the remote `last_synced` first, compare against the local
+   * baseline, and require explicit conflict resolution when both sides have
+   * changed since the last sync.
+   *
+   * `opts.strategy`:
+   *   'safe'   (default) — refuse to overwrite a newer remote and return a
+   *                        conflict descriptor so the UI can prompt.
+   *   'force'            — overwrite anyway (user picked "use local").
+   *   'merge'            — shallow-merge remote settings under local (local wins on keys).
    */
-  async syncProfileToCloud() {
+  async syncProfileToCloud(opts?: { strategy?: 'safe' | 'force' | 'merge' }) {
     if (!this.currentUser) {
       throw new Error('User not authenticated');
     }
+    const strategy = opts?.strategy || 'safe';
 
     try {
       const db = getDb();
+
+      // BUG-031: read the local baseline (last time we synced) and the remote head.
+      let localBaseline = 0;
+      try {
+        const row = db.prepare("SELECT value FROM settings WHERE key = 'cloud.lastSyncedAt'").get() as any;
+        localBaseline = row?.value ? parseInt(row.value, 10) : 0;
+      } catch { /* table may not exist on first run */ }
+      const remoteHead = await this.client
+        .from('profiles')
+        .select('last_synced, settings')
+        .eq('user_id', this.currentUser.id)
+        .maybeSingle();
+      const remoteLastSynced = remoteHead?.data?.last_synced
+        ? new Date(remoteHead.data.last_synced).getTime()
+        : 0;
+      if (strategy === 'safe' && remoteLastSynced > localBaseline + 1000) {
+        return {
+          success: false,
+          conflict: true,
+          remoteLastSynced,
+          localBaseline,
+          remoteSettings: remoteHead?.data?.settings ?? null,
+          error: 'Remote has newer changes — choose force/merge to resolve.',
+        };
+      }
 
       // Get local settings
       const settingsRows = db.prepare('SELECT key, value FROM settings').all() as any[];
@@ -209,17 +247,27 @@ export class SupabaseService {
         }
       });
 
-      // Get local stats
-      const games = db.prepare('SELECT COUNT(*) as count FROM games').get() as any;
-      const playtime = db.prepare('SELECT SUM(playtime_seconds) as total FROM games').get() as any;
-      const achievements = db.prepare('SELECT COUNT(*) as count FROM achievements WHERE unlocked = 1').get() as any;
+      // BUG-006: exclude archived/hidden games from aggregate counts so totals
+      // reflect what the user actually still cares about.
+      const games = db.prepare('SELECT COUNT(*) as count FROM games WHERE COALESCE(is_hidden, 0) = 0').get() as any;
+      const playtime = db.prepare('SELECT SUM(playtime_seconds) as total FROM games WHERE COALESCE(is_hidden, 0) = 0').get() as any;
+      const achievements = db.prepare(
+        'SELECT COUNT(*) as count FROM achievements a ' +
+        'LEFT JOIN games g ON g.id = a.game_id ' +
+        'WHERE a.unlocked = 1 AND COALESCE(g.is_hidden, 0) = 0'
+      ).get() as any;
+
+      // BUG-031: shallow-merge under the remote when caller chose 'merge'.
+      const finalSettings = strategy === 'merge' && remoteHead?.data?.settings
+        ? { ...remoteHead.data.settings, ...settings }
+        : settings;
 
       const profile: CloudProfile = {
         userId: this.currentUser.id,
-        username: settings.account?.username || 'Player',
+        username: finalSettings.account?.username || 'Player',
         email: this.currentUser.email!,
-        avatar: settings.account?.avatar,
-        settings,
+        avatar: finalSettings.account?.avatar,
+        settings: finalSettings,
         stats: {
           totalGames: games.count || 0,
           totalPlaytime: playtime.total || 0,
@@ -242,6 +290,12 @@ export class SupabaseService {
         });
 
       if (error) throw error;
+
+      // BUG-031: persist new baseline so future syncs can detect remote changes.
+      try {
+        db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('cloud.lastSyncedAt', ?)")
+          .run(String(profile.lastSynced));
+      } catch { /* settings table missing on first run */ }
 
       return { success: true, profile };
     } catch (error: any) {

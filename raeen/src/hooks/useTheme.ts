@@ -59,7 +59,17 @@ export const useTheme = () => {
         const gameFont = getGameFont(selectedGame);
         root.style.setProperty('--game-font', gameFont);
 
-    }, [settings?.appearance, dynamicAccentColor, selectedGame]);
+    }, [
+        // BUG-021: depend on the *specific* values read so unrelated appearance
+        // mutations don't re-run this whole effect, and selectedGame metadata
+        // (cover/title) doesn't trigger theme reapply — only the id matters here.
+        settings?.appearance.theme,
+        settings?.appearance.accentColor,
+        settings?.appearance.blurLevel,
+        settings?.appearance.overlayOpacity,
+        dynamicAccentColor,
+        selectedGame?.id,
+    ]);
 };
 
 function hexToRgb(hex: string): string {

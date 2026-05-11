@@ -39,12 +39,50 @@ const DEFAULT_PREFERENCES: NotificationPreferences = {
 export class NotificationService {
   private preferences: NotificationPreferences;
   private notificationHistory: Array<{ id: string; timestamp: number; type: string; title: string }> = [];
-  private recentNotifications: Set<string> = new Set(); // Prevent duplicate notifications
+  // BUG-025: persist last-sent timestamps to disk so a launcher restart doesn't
+  // re-fire identical notifications the user has already seen.
+  private recentNotifications: Map<string, number> = new Map(); // key → ts
   private cleanupInterval: NodeJS.Timeout | null = null;
+  private static readonly THROTTLE_WINDOW_MS = 30 * 60 * 1000; // 30 min
 
   constructor() {
     this.preferences = this.loadPreferences();
+    this.loadThrottleStateFromDisk();
     this.startCleanupTimer();
+  }
+
+  private throttlePath(): string | null {
+    try {
+      const { app } = require('electron');
+      const path = require('node:path');
+      return path.join(app.getPath('userData'), 'notification-throttle.json');
+    } catch { return null; }
+  }
+
+  private loadThrottleStateFromDisk(): void {
+    try {
+      const fs = require('node:fs');
+      const file = this.throttlePath();
+      if (!file || !fs.existsSync(file)) return;
+      const obj = JSON.parse(fs.readFileSync(file, 'utf8') || '{}');
+      const now = Date.now();
+      for (const [k, ts] of Object.entries(obj)) {
+        if (typeof ts === 'number' && now - ts < NotificationService.THROTTLE_WINDOW_MS) {
+          this.recentNotifications.set(k, ts);
+        }
+      }
+    } catch {/* non-fatal */}
+  }
+
+  private saveThrottleStateToDisk(): void {
+    try {
+      const fs = require('node:fs');
+      const file = this.throttlePath();
+      if (!file) return;
+      const obj: Record<string, number> = {};
+      for (const [k, ts] of this.recentNotifications.entries()) obj[k] = ts;
+      fs.writeFileSync(file, JSON.stringify(obj), 'utf8');
+    } catch {/* non-fatal */}
   }
 
   /**
@@ -97,9 +135,11 @@ export class NotificationService {
       return;
     }
 
-    // Check for duplicate notifications (within 30 seconds)
+    // BUG-025: throttle window survives restarts (loaded from disk in ctor).
     const notificationKey = `${type}:${options.title}:${options.body}`;
-    if (this.recentNotifications.has(notificationKey)) {
+    const now = Date.now();
+    const lastTs = this.recentNotifications.get(notificationKey);
+    if (lastTs && now - lastTs < NotificationService.THROTTLE_WINDOW_MS) {
       return;
     }
 
@@ -115,19 +155,15 @@ export class NotificationService {
 
       notification.show();
 
-      // Track notification
-      this.recentNotifications.add(notificationKey);
+      // Track notification (BUG-025: persist throttle state)
+      this.recentNotifications.set(notificationKey, now);
+      this.saveThrottleStateToDisk();
       this.notificationHistory.push({
         id: `${Date.now()}-${Math.random()}`,
         timestamp: Date.now(),
         type,
         title: options.title,
       });
-
-      // Clean up after 30 seconds
-      setTimeout(() => {
-        this.recentNotifications.delete(notificationKey);
-      }, 30000);
 
       // Keep history limited to last 100 notifications
       if (this.notificationHistory.length > 100) {
@@ -271,13 +307,19 @@ export class NotificationService {
    * Start cleanup timer to remove old notifications from recent set
    */
   private startCleanupTimer(): void {
-    // Clean up every 60 seconds
+    // BUG-025: every minute, drop entries past the throttle window so the
+    // persisted file doesn't grow unbounded.
     this.cleanupInterval = setInterval(() => {
-      // The Set is already being cleaned up with setTimeout, but this is a safety net
-      if (this.recentNotifications.size > 100) {
-        this.recentNotifications.clear();
+      const now = Date.now();
+      let removed = 0;
+      for (const [key, ts] of this.recentNotifications.entries()) {
+        if (now - ts > NotificationService.THROTTLE_WINDOW_MS) {
+          this.recentNotifications.delete(key);
+          removed++;
+        }
       }
-    }, 60000);
+      if (removed > 0) this.saveThrottleStateToDisk();
+    }, 60_000);
   }
 
   /**

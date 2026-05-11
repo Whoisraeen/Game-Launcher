@@ -175,6 +175,11 @@ export class RecommendationManager {
                     score += game.rating * 50;
                 }
 
+                // BUG-011: friend-activity boost. Games friends played in the last 14 days
+                // get a meaningful bump so social signals influence the result.
+                const friendBoost = this.getFriendBoostFor(game.title);
+                if (friendBoost > 0) score += friendBoost;
+
                 // Random jitter to rotate suggestions slightly
                 score += Math.random() * 10;
 
@@ -182,10 +187,50 @@ export class RecommendationManager {
             });
 
         // 3. Sort by score descending and take top 5
-        return recommendations
+        const top = recommendations
             .sort((a, b) => b.score - a.score)
             .map(item => item.game)
             .slice(0, 5);
+
+        // BUG-023: cache last successful recommendation set so offline fallback isn't empty.
+        try {
+            const fs = require('node:fs'); const path = require('node:path');
+            const { app } = require('electron');
+            const file = path.join(app.getPath('userData'), 'recommendations-cache.json');
+            fs.writeFileSync(file, JSON.stringify({ ts: Date.now(), ids: top.map(g => g.id) }), 'utf8');
+        } catch { /* non-fatal */ }
+        return top;
+    }
+
+    // BUG-011: returns a score bump (0-300) when one or more friends recently played the title.
+    // Reads from friends_recent_plays table (game_name, played_at). Safe no-op if table missing.
+    private getFriendBoostFor(title: string): number {
+        if (!title) return 0;
+        try {
+            const { getDb } = require('../database');
+            const db = getDb();
+            const cutoff = Date.now() - 14 * 24 * 60 * 60 * 1000;
+            const row = db.prepare(
+                `SELECT COUNT(*) as c FROM friends_recent_plays
+                 WHERE LOWER(game_name) = LOWER(?) AND played_at >= ?`
+            ).get(title, cutoff) as { c: number };
+            return Math.min(300, (row?.c || 0) * 75);
+        } catch { return 0; }
+    }
+
+    // BUG-023: load cached recommendations when live computation returned nothing
+    // (empty library, parse error, or initial offline state).
+    getCachedRecommendations(games: Game[]): Game[] {
+        try {
+            const fs = require('node:fs'); const path = require('node:path');
+            const { app } = require('electron');
+            const file = path.join(app.getPath('userData'), 'recommendations-cache.json');
+            if (!fs.existsSync(file)) return [];
+            const data = JSON.parse(fs.readFileSync(file, 'utf8'));
+            const ids: string[] = data?.ids || [];
+            const byId = new Map(games.map(g => [g.id, g]));
+            return ids.map(id => byId.get(id)).filter((x): x is Game => !!x);
+        } catch { return []; }
     }
 
     getMoodRecommendations(games: Game[], mood: string, timeConstraint?: string): Game[] {

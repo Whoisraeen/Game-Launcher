@@ -21,6 +21,9 @@ export const useLaunchGame = () => {
     const game = games.find(g => g.id === gameId);
     const gameName = game?.title || 'Unknown Game';
 
+    // BUG-022: signal launch start so UI animations (particles, etc.) pause.
+    window.dispatchEvent(new CustomEvent('raeen:gamelaunch-pending'));
+
     // Check if health check is enabled in settings
     const healthCheckEnabled = settings?.gaming?.preGameHealthCheck !== false;
 
@@ -33,13 +36,19 @@ export const useLaunchGame = () => {
       });
     } else {
       // Launch directly without health check
-      storeLaunchGame(gameId);
+      storeLaunchGame(gameId).finally(() => {
+        window.dispatchEvent(new CustomEvent('raeen:gamelaunch-done'));
+      });
     }
   };
 
   const continueLaunch = () => {
     if (launchState.pendingGameId) {
-      storeLaunchGame(launchState.pendingGameId);
+      storeLaunchGame(launchState.pendingGameId).finally(() => {
+        window.dispatchEvent(new CustomEvent('raeen:gamelaunch-done'));
+      });
+    } else {
+      window.dispatchEvent(new CustomEvent('raeen:gamelaunch-done'));
     }
     closeHealthCheck();
   };
@@ -50,6 +59,8 @@ export const useLaunchGame = () => {
       pendingGameId: null,
       pendingGameName: null,
     });
+    // BUG-022: cancelled launch — let animations resume.
+    window.dispatchEvent(new CustomEvent('raeen:gamelaunch-done'));
   };
 
   return {

@@ -32,6 +32,25 @@ const THEME_PRESETS: ThemePreset[] = [
 
 const CATEGORIES = ['all', 'dark', 'vibrant', 'minimal', 'neon'] as const;
 
+// BUG-030: schema validation for theme manifests. Returns structured errors
+// rather than throwing so callers (UI, future external-theme importer) can
+// surface a clear message without crashing the renderer.
+const HEX_RE = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/;
+const VALID_CATEGORIES = new Set<ThemePreset['category']>(['dark', 'vibrant', 'minimal', 'neon']);
+const ID_RE = /^[a-z0-9][a-z0-9-]{1,40}$/;
+function validateThemeManifest(t: any): { ok: true } | { ok: false; errors: string[] } {
+  const errors: string[] = [];
+  if (!t || typeof t !== 'object') return { ok: false, errors: ['Manifest must be an object'] };
+  if (typeof t.id !== 'string' || !ID_RE.test(t.id))         errors.push('id must be lowercase kebab, ≤40 chars');
+  if (typeof t.name !== 'string' || t.name.length > 60)      errors.push('name must be ≤60 chars');
+  if (typeof t.accent !== 'string' || !HEX_RE.test(t.accent))errors.push('accent must be a hex color');
+  if (typeof t.gradient !== 'string' || t.gradient.length > 200 || /[<>"'`]/.test(t.gradient)) errors.push('gradient must be a short Tailwind class string');
+  if (typeof t.bgStyle !== 'string' || t.bgStyle.length > 16)errors.push('bgStyle must be a short token');
+  if (typeof t.premium !== 'boolean')                        errors.push('premium must be boolean');
+  if (!VALID_CATEGORIES.has(t.category))                     errors.push(`category must be one of: ${[...VALID_CATEGORIES].join(', ')}`);
+  return errors.length === 0 ? { ok: true } : { ok: false, errors };
+}
+
 const ThemeStore: React.FC = () => {
   const { settings, updateSetting } = useSettingsStore();
   const [activeCategory, setActiveCategory] = useState<string>('all');
@@ -46,6 +65,15 @@ const ThemeStore: React.FC = () => {
   const applyTheme = async (theme: ThemePreset) => {
     setApplying(theme.id);
     try {
+      // BUG-030: validate the manifest shape before handing it to the global
+      // theme system. A malformed theme (string id, missing accent, bad hex)
+      // could otherwise crash the renderer or inject CSS via a bad gradient.
+      const v = validateThemeManifest(theme);
+      if (!v.ok) {
+        console.warn('Theme manifest invalid:', v.errors);
+        setApplying(null);
+        return;
+      }
       await updateSetting('appearance', {
         theme: theme.id as any,
         accentColor: theme.accent,

@@ -737,8 +737,34 @@ export class GameManager extends EventEmitter {
     }
 
     getWeeklyActivity() {
-        // Mock data or implementation using playtime_history table if it exists
-        return Array(7).fill(0).map(() => Math.floor(Math.random() * 120));
+        // BUG-006: real query against playtime_sessions, excluding archived games.
+        // Returns minutes-played per day for the last 7 days (oldest → newest).
+        try {
+            const db = getDb();
+            const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+            const rows = db.prepare(`
+                SELECT s.start_time AS ts, s.duration_seconds AS secs
+                FROM playtime_sessions s
+                LEFT JOIN games g ON g.id = s.game_id
+                WHERE s.start_time >= ?
+                  AND COALESCE(g.is_hidden, 0) = 0
+            `).all(sevenDaysAgo) as { ts: number; secs: number }[];
+
+            const buckets = new Array(7).fill(0);
+            const startOfToday = new Date();
+            startOfToday.setHours(0, 0, 0, 0);
+            const startMs = startOfToday.getTime();
+
+            for (const row of rows) {
+                const dayDiff = Math.floor((startMs - row.ts) / (24 * 60 * 60 * 1000));
+                if (dayDiff < 0 || dayDiff >= 7) continue;
+                buckets[6 - dayDiff] += Math.round((row.secs || 0) / 60);
+            }
+            return buckets;
+        } catch (err) {
+            console.warn('getWeeklyActivity failed, returning zeros:', err);
+            return new Array(7).fill(0);
+        }
     }
 
     toggleFavorite(gameId: string, isFavorite: boolean) {
@@ -748,8 +774,22 @@ export class GameManager extends EventEmitter {
     }
 
     getAverageSessionDuration() {
-        // Mock
-        return 45; 
+        // BUG-006: real average duration in minutes across non-archived games (last 90 days).
+        try {
+            const db = getDb();
+            const since = Date.now() - 90 * 24 * 60 * 60 * 1000;
+            const row = db.prepare(`
+                SELECT AVG(s.duration_seconds) AS avg_sec
+                FROM playtime_sessions s
+                LEFT JOIN games g ON g.id = s.game_id
+                WHERE s.start_time >= ?
+                  AND COALESCE(g.is_hidden, 0) = 0
+                  AND s.duration_seconds > 60
+            `).get(since) as { avg_sec: number | null };
+            return row?.avg_sec ? Math.round(row.avg_sec / 60) : 0;
+        } catch {
+            return 0;
+        }
     }
 
     async updateGameDetails(gameId: string, updates: any) {

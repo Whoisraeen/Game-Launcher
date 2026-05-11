@@ -406,6 +406,11 @@ const migrations: Migration[] = [
                     game_id TEXT NOT NULL,
                     profile_name TEXT NOT NULL,
                     settings_json TEXT NOT NULL DEFAULT '{}',
+                    -- BUG-013: platform identity snapshot so a profile can be
+                    -- re-attached even if the game row is recreated (after a
+                    -- delete + re-import, or a path change that drops the row).
+                    platform_snapshot TEXT,
+                    platform_id_snapshot TEXT,
                     created_at INTEGER DEFAULT (strftime('%s', 'now') * 1000),
                     FOREIGN KEY (game_id) REFERENCES games(id) ON DELETE CASCADE
                 )
