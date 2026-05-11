@@ -1,10 +1,10 @@
 import React, { useMemo, useState, useEffect, useRef } from 'react';
-import { Search, UserPlus, MessageSquare, RefreshCw, Trash2, Gamepad2, Download, Cloud, Activity, Send } from 'lucide-react';
+import { Search, MessageSquare, RefreshCw, Trash2, Download, Cloud, Activity, Send, UserPlus } from 'lucide-react';
 import { useFriendStore } from '../../stores/friendStore';
 import { Friend } from '../../types';
 
 const Friends: React.FC = () => {
-    const { friends, loadFriends, addFriend, removeFriend, simulateActivity, importSteamFriends, syncFriends } = useFriendStore();
+    const { friends, loadFriends, addFriend, removeFriend, importSteamFriends, syncFriends } = useFriendStore();
     const [filter, setFilter] = useState('');
     const [showAddModal, setShowAddModal] = useState(false);
     const [newFriendName, setNewFriendName] = useState('');
@@ -12,31 +12,37 @@ const Friends: React.FC = () => {
     const [messages, setMessages] = useState<any[]>([]);
     const [newMessage, setNewMessage] = useState('');
     const messagesEndRef = useRef<HTMLDivElement>(null);
+    const [selectedFriendId, setSelectedFriendId] = useState<string | null>(null);
+    const selectedFriendIdRef = useRef<string | null>(null);
+
+    useEffect(() => {
+        selectedFriendIdRef.current = selectedFriendId;
+    }, [selectedFriendId]);
 
     useEffect(() => {
         loadFriends();
 
-        // Simulate activity updates every 30 seconds
-        const interval = setInterval(() => {
-            simulateActivity();
-        }, 30000);
-        
-        // Listen for incoming messages
-        const removeListener = window.ipcRenderer.on('friends:message', (_: any, data: any) => {
-            if (data.friendId === selectedFriendId) {
-                setMessages(prev => [...prev, data.message]);
-                // If it's an incoming message from the current friend, mark read
-                if (data.message.sender !== 'me') {
-                    window.ipcRenderer.invoke('friends:markRead', selectedFriendId);
-                }
+        const removeMsgListener = window.ipcRenderer.on('friends:message', (_: any, data: any) => {
+            const sid = selectedFriendIdRef.current;
+            if (data.friendId !== sid || !data.message?.id) return;
+            setMessages(prev => {
+                if (prev.some(m => m.id === data.message.id)) return prev;
+                return [...prev, data.message];
+            });
+            if (data.message.sender !== 'me' && sid) {
+                window.ipcRenderer.invoke('friends:markRead', sid);
             }
         });
 
+        const removeUpdateListener = window.ipcRenderer.on('friends:update', () => {
+            loadFriends();
+        });
+
         return () => {
-            clearInterval(interval);
-            removeListener();
+            removeMsgListener();
+            removeUpdateListener();
         };
-    }, [loadFriends, simulateActivity]);
+    }, [loadFriends]);
 
     const filteredFriends = useMemo<Friend[]>(() => {
         if (!filter) return friends;
@@ -46,7 +52,6 @@ const Friends: React.FC = () => {
     const onlineFriends = filteredFriends.filter(f => f.status !== 'offline');
     const offlineFriends = filteredFriends.filter(f => f.status === 'offline');
 
-    const [selectedFriendId, setSelectedFriendId] = useState<string | null>(null);
     const selectedFriend = friends.find(f => f.id === selectedFriendId);
 
     useEffect(() => {
@@ -78,21 +83,20 @@ const Friends: React.FC = () => {
         if (!selectedFriendId || !newMessage.trim()) return;
 
         try {
-            await window.ipcRenderer.invoke('friends:sendMessage', selectedFriendId, newMessage.trim());
-            // Optimistic update handled by listener usually, but let's just rely on listener or re-fetch?
-            // Listener 'friends:message' handles own messages too? Yes in `FriendsManager.ts`.
+            const text = newMessage.trim();
+            await window.ipcRenderer.invoke('friends:sendMessage', selectedFriendId, text);
             setNewMessage('');
         } catch (error) {
             console.error('Failed to send message', error);
         }
     };
 
-    const handleAddFriend = () => {
-        if (newFriendName.trim()) {
-            addFriend(newFriendName, newFriendPlatform);
-            setNewFriendName('');
-            setShowAddModal(false);
-        }
+    const handleAddFriend = async () => {
+        const name = newFriendName.trim();
+        if (!name) return;
+        await addFriend(name, newFriendPlatform);
+        setNewFriendName('');
+        setShowAddModal(false);
     };
 
     return (
@@ -106,29 +110,30 @@ const Friends: React.FC = () => {
                             <button
                                 onClick={syncFriends}
                                 className="p-2 hover:bg-white/10 rounded-full transition-colors text-gray-400 hover:text-white"
-                                title="Sync with Steam API"
+                                title="Sync presence from Steam Web API (needs API key & Steam ID in Settings)"
                             >
                                 <Cloud size={18} />
                             </button>
                             <button
                                 onClick={() => importSteamFriends()}
                                 className="p-2 hover:bg-white/10 rounded-full transition-colors text-gray-400 hover:text-white"
-                                title="Import Steam Friends (Local)"
+                                title="Import friend names from Steam (local config)"
                             >
                                 <Download size={18} />
                             </button>
                             <button
-                                onClick={simulateActivity}
+                                onClick={() => loadFriends()}
                                 className="p-2 hover:bg-white/10 rounded-full transition-colors text-gray-400 hover:text-white"
-                                title="Simulate Activity"
+                                title="Reload list from database"
                             >
                                 <RefreshCw size={18} />
                             </button>
                             <button
                                 onClick={() => setShowAddModal(true)}
-                                className="p-2 hover:bg-white/10 rounded-full transition-colors"
+                                className="p-2 hover:bg-white/10 rounded-full transition-colors text-gray-400 hover:text-white"
+                                title="Add friend manually"
                             >
-                                <UserPlus size={20} className="text-blue-400" />
+                                <UserPlus size={18} />
                             </button>
                         </div>
                     </div>
@@ -187,14 +192,13 @@ const Friends: React.FC = () => {
                     ))}
 
                     {friends.length === 0 && (
-                        <div className="px-6 py-8 text-center text-gray-500">
-                            <p className="mb-2">No friends yet.</p>
-                            <button
-                                onClick={() => setShowAddModal(true)}
-                                className="text-blue-400 hover:text-blue-300 text-sm"
-                            >
-                                Add someone
-                            </button>
+                        <div className="px-6 py-8 text-center text-gray-500 space-y-3">
+                            <p>No friends yet.</p>
+                            <p className="text-sm text-gray-600">
+                                Add someone with <span className="text-gray-400">+</span>, or use{' '}
+                                <span className="text-gray-400">Import</span> for Steam names and{' '}
+                                <span className="text-gray-400">Cloud</span> for live Steam presence (API key + Steam ID in Settings → Integrations).
+                            </p>
                         </div>
                     )}
                 </div>
@@ -299,11 +303,13 @@ const Friends: React.FC = () => {
                 )}
             </div>
 
-            {/* Add Friend Modal */}
             {showAddModal && (
                 <div className="absolute inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
                     <div className="bg-slate-900 border border-white/10 rounded-xl w-full max-w-md p-6 shadow-2xl">
-                        <h3 className="text-xl font-bold text-white mb-4">Add Friend</h3>
+                        <h3 className="text-xl font-bold text-white mb-4">Add friend</h3>
+                        <p className="text-xs text-gray-500 mb-4">
+                            Manual entries are stored locally. Steam friends can be enriched via Import / Cloud sync.
+                        </p>
                         <div className="space-y-4">
                             <div>
                                 <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Username</label>
@@ -312,7 +318,7 @@ const Friends: React.FC = () => {
                                     value={newFriendName}
                                     onChange={(e) => setNewFriendName(e.target.value)}
                                     className="w-full bg-black/40 border border-white/10 rounded-lg p-3 text-white focus:outline-none focus:border-blue-500"
-                                    placeholder="Enter username"
+                                    placeholder="Display name or gamertag"
                                     autoFocus
                                 />
                             </div>
@@ -329,21 +335,26 @@ const Friends: React.FC = () => {
                                     <option value="psn">PlayStation</option>
                                     <option value="riot">Riot Games</option>
                                     <option value="battlenet">Battle.net</option>
+                                    <option value="gog">GOG</option>
+                                    <option value="other">Other</option>
                                 </select>
                             </div>
                         </div>
                         <div className="flex justify-end gap-3 mt-6">
                             <button
+                                type="button"
                                 onClick={() => setShowAddModal(false)}
                                 className="px-4 py-2 rounded-lg hover:bg-white/10 text-gray-300 transition-colors"
                             >
                                 Cancel
                             </button>
                             <button
+                                type="button"
                                 onClick={handleAddFriend}
-                                className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg font-medium transition-colors"
+                                disabled={!newFriendName.trim()}
+                                className="px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg font-medium transition-colors"
                             >
-                                Add Friend
+                                Add
                             </button>
                         </div>
                     </div>

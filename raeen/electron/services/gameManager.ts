@@ -235,7 +235,9 @@ export class GameManager extends EventEmitter {
                     installPath: game.installPath,
                     executable: game.executable,
                     addedAt: existing?.added_at || Date.now(),
-                    isInstalled: game.isInstalled ? 1 : 0,
+                    // Steam passes explicit installed/uninstalled; other scanners omit the flag —
+                    // treat omitted as installed so synced Epic/GOG/etc. rows aren't overwritten as uninstalled.
+                    isInstalled: game.isInstalled !== undefined ? (game.isInstalled ? 1 : 0) : 1,
                     icon: existing?.icon_url || game.icon,
                     cover: existing?.cover_url || game.cover,
                     hero: existing?.background_url || game.hero,

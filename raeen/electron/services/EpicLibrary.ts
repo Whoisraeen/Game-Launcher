@@ -20,21 +20,28 @@ export class EpicLibrary {
             if (!fs.existsSync(dir)) continue;
 
             try {
-                const files = fs.readdirSync(dir).filter(f => f.endsWith('.item'));
+                const files = fs.readdirSync(dir).filter(f =>
+                    f.endsWith('.item') || f.endsWith('.manifest')
+                );
                 for (const file of files) {
                     try {
-                        const content = fs.readFileSync(path.join(dir, file), 'utf-8');
-                        const manifest = JSON.parse(content);
+                        const raw = fs.readFileSync(path.join(dir, file), 'utf-8');
+                        const manifest = this.parseEpicJson(raw);
+                        if (!manifest) continue;
 
-                        if (this.isValidManifest(manifest)) {
-                            const game: EpicGame = {
-                                id: manifest.AppName,
-                                title: manifest.DisplayName || manifest.AppName,
-                                installPath: manifest.InstallLocation,
-                                executable: manifest.LaunchExecutable
-                            };
-                            gamesMap.set(game.id, game);
-                        }
+                        const norm = this.normalizeManifestRecord(manifest);
+                        if (!norm || !this.isValidManifest(norm)) continue;
+
+                        const installPath = (norm.InstallLocation || '').trim();
+                        if (!installPath) continue;
+
+                        const game: EpicGame = {
+                            id: norm.AppName,
+                            title: norm.DisplayName?.trim() || norm.AppName,
+                            installPath,
+                            executable: norm.LaunchExecutable
+                        };
+                        gamesMap.set(game.id, game);
                     } catch (e) {
                         console.error(`Error parsing Epic manifest ${file}:`, e);
                     }
@@ -44,60 +51,108 @@ export class EpicLibrary {
             }
         }
 
-        // 2. Parse LauncherInstalled.dat (Fallback source)
-        const datPath = 'C:\\ProgramData\\Epic\\UnrealEngineLauncher\\LauncherInstalled.dat';
-        if (fs.existsSync(datPath)) {
+        // 2. Parse LauncherInstalled.dat (Fallback — works when manifests are missing/outdated)
+        for (const datPath of this.getLauncherInstalledPaths()) {
+            if (!fs.existsSync(datPath)) continue;
             try {
-                const content = fs.readFileSync(datPath, 'utf-8');
-                const data = JSON.parse(content);
-                if (data.InstallationList && Array.isArray(data.InstallationList)) {
-                    for (const app of data.InstallationList) {
-                        if (this.isValidGame(app) && !gamesMap.has(app.AppName)) {
-                            gamesMap.set(app.AppName, {
-                                id: app.AppName,
-                                title: this.cleanTitle(app.AppName),
-                                installPath: app.InstallLocation,
-                                executable: app.LaunchExecutable
-                            });
-                        }
+                const raw = fs.readFileSync(datPath, 'utf-8');
+                const data = this.parseEpicJson(raw);
+                const list = data?.InstallationList ?? data?.installationList;
+                if (!Array.isArray(list)) continue;
+
+                for (const app of list) {
+                    const norm = this.normalizeInstalledEntry(app);
+                    if (!norm || !this.isValidGame(norm)) continue;
+
+                    const installPath = (norm.InstallLocation || '').trim();
+                    if (!installPath) continue;
+
+                    if (!gamesMap.has(norm.AppName)) {
+                        gamesMap.set(norm.AppName, {
+                            id: norm.AppName,
+                            title: norm.DisplayName?.trim() || this.cleanTitle(norm.AppName),
+                            installPath,
+                            executable: norm.LaunchExecutable
+                        });
                     }
                 }
             } catch (e) {
-                console.error('Error parsing LauncherInstalled.dat:', e);
+                console.error('Error parsing LauncherInstalled.dat:', datPath, e);
             }
         }
 
         return Array.from(gamesMap.values());
     }
 
+    private parseEpicJson(raw: string): any | null {
+        try {
+            let s = raw.trimStart();
+            if (s.charCodeAt(0) === 0xfeff) s = s.slice(1);
+            return JSON.parse(s);
+        } catch {
+            return null;
+        }
+    }
+
+    private normalizeManifestRecord(m: any): { AppName: string; DisplayName?: string; InstallLocation?: string; LaunchExecutable?: string } | null {
+        const AppName = m.AppName ?? m.appName;
+        if (!AppName || typeof AppName !== 'string') return null;
+        return {
+            AppName,
+            DisplayName: m.DisplayName ?? m.displayName,
+            InstallLocation: m.InstallLocation ?? m.installLocation,
+            LaunchExecutable: m.LaunchExecutable ?? m.launchExecutable,
+        };
+    }
+
+    private normalizeInstalledEntry(app: any): { AppName: string; DisplayName?: string; InstallLocation?: string; LaunchExecutable?: string } | null {
+        const AppName = app.AppName ?? app.appName;
+        if (!AppName || typeof AppName !== 'string') return null;
+        return {
+            AppName,
+            DisplayName: app.DisplayName ?? app.displayName,
+            InstallLocation: app.InstallLocation ?? app.installLocation,
+            LaunchExecutable: app.LaunchExecutable ?? app.launchExecutable,
+        };
+    }
+
+    private getLauncherInstalledPaths(): string[] {
+        const dirs = new Set<string>();
+        if (process.env.ProgramData) {
+            dirs.add(path.join(process.env.ProgramData, 'Epic', 'UnrealEngineLauncher', 'LauncherInstalled.dat'));
+        }
+        for (const drive of DriveScanner.getDrives()) {
+            dirs.add(path.join(drive, 'ProgramData', 'Epic', 'UnrealEngineLauncher', 'LauncherInstalled.dat'));
+        }
+        return [...dirs];
+    }
+
     private async getManifestDirs(): Promise<string[]> {
-        const dirs: string[] = [];
+        const dirs = new Set<string>();
         const drives = DriveScanner.getDrives();
 
         // Standard location
         if (process.env.ProgramData) {
-            dirs.push(path.join(process.env.ProgramData, 'Epic', 'EpicGamesLauncher', 'Data', 'Manifests'));
+            dirs.add(path.join(process.env.ProgramData, 'Epic', 'EpicGamesLauncher', 'Data', 'Manifests'));
         }
 
         // Check all drives
         for (const drive of drives) {
-            dirs.push(path.join(drive, 'ProgramData', 'Epic', 'EpicGamesLauncher', 'Data', 'Manifests'));
+            dirs.add(path.join(drive, 'ProgramData', 'Epic', 'EpicGamesLauncher', 'Data', 'Manifests'));
         }
 
-        return dirs;
+        return [...dirs];
     }
 
-    private isValidGame(app: any): boolean {
+    private isValidGame(app: { AppName: string }): boolean {
         if (!app.AppName) return false;
         if (app.AppName.startsWith('UE_')) return false;
         return true;
     }
 
-    private isValidManifest(manifest: any): boolean {
+    private isValidManifest(manifest: { AppName: string }): boolean {
         if (!manifest.AppName) return false;
         if (manifest.AppName.startsWith('UE_')) return false;
-        // Filter out DLCs?
-        // Playnite logic: Check if it's a DLC app name or has parent
         return true;
     }
 

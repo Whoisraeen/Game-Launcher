@@ -7,68 +7,81 @@ interface FriendChatProps {
     onClose: () => void;
 }
 
-interface Message {
+interface ChatRow {
     id: string;
-    text: string;
-    sender: 'me' | 'friend';
-    timestamp: Date;
+    content: string;
+    sender: string;
+    timestamp: number;
+}
+
+function mapDbRow(row: any): ChatRow {
+    return {
+        id: row.id,
+        content: row.content ?? '',
+        sender: row.sender ?? 'me',
+        timestamp: typeof row.timestamp === 'number' ? row.timestamp : Number(row.timestamp),
+    };
 }
 
 const FriendChat: React.FC<FriendChatProps> = ({ friend, onClose }) => {
-    const [messages, setMessages] = useState<Message[]>([]);
+    const [messages, setMessages] = useState<ChatRow[]>([]);
     const [inputValue, setInputValue] = useState('');
     const [isMinimized, setIsMinimized] = useState(false);
     const messagesEndRef = useRef<HTMLDivElement>(null);
+    const friendIdRef = useRef(friend.id);
 
-    // Initial greeting simulation
     useEffect(() => {
-        setMessages([
-            { id: '1', text: 'Hey! Are you down for some games later?', sender: 'friend', timestamp: new Date(Date.now() - 1000 * 60 * 60) },
-        ]);
+        friendIdRef.current = friend.id;
     }, [friend.id]);
 
-    // Auto-scroll to bottom
+    useEffect(() => {
+        let cancelled = false;
+        (async () => {
+            try {
+                const rows = await window.ipcRenderer.invoke('friends:getMessages', friend.id);
+                if (!cancelled && Array.isArray(rows)) {
+                    setMessages(rows.map(mapDbRow));
+                }
+                await window.ipcRenderer.invoke('friends:markRead', friend.id);
+            } catch (e) {
+                console.error('FriendChat: failed to load messages', e);
+            }
+        })();
+        return () => {
+            cancelled = true;
+        };
+    }, [friend.id]);
+
+    useEffect(() => {
+        const unsub = window.ipcRenderer.on('friends:message', (_: unknown, data: { friendId?: string; message?: any }) => {
+            if (!data?.friendId || data.friendId !== friendIdRef.current || !data.message) return;
+            const row = mapDbRow(data.message);
+            setMessages(prev => {
+                if (prev.some(m => m.id === row.id)) return prev;
+                return [...prev, row];
+            });
+        });
+        return () => {
+            unsub();
+        };
+    }, []);
+
     useEffect(() => {
         if (!isMinimized) {
             messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
         }
     }, [messages, isMinimized]);
 
-    const handleSend = () => {
-        if (!inputValue.trim()) return;
+    const handleSend = async () => {
+        const text = inputValue.trim();
+        if (!text) return;
 
-        const newMessage: Message = {
-            id: Date.now().toString(),
-            text: inputValue,
-            sender: 'me',
-            timestamp: new Date()
-        };
-
-        setMessages(prev => [...prev, newMessage]);
         setInputValue('');
-
-        // Simulate reply
-        if (friend.status !== 'offline') {
-            setTimeout(() => {
-                const replies = [
-                    "Nice!",
-                    "Let's go!",
-                    "Give me a sec...",
-                    "lol",
-                    "Can't right now, maybe later?",
-                    "Check this out.",
-                    "Did you see the new update?"
-                ];
-                const randomReply = replies[Math.floor(Math.random() * replies.length)];
-                
-                const replyMessage: Message = {
-                    id: (Date.now() + 1).toString(),
-                    text: randomReply,
-                    sender: 'friend',
-                    timestamp: new Date()
-                };
-                setMessages(prev => [...prev, replyMessage]);
-            }, 1500 + Math.random() * 2000);
+        try {
+            await window.ipcRenderer.invoke('friends:sendMessage', friend.id, text);
+        } catch (e) {
+            console.error('FriendChat: send failed', e);
+            setInputValue(text);
         }
     };
 
@@ -95,7 +108,6 @@ const FriendChat: React.FC<FriendChatProps> = ({ friend, onClose }) => {
 
     return (
         <div className="fixed bottom-4 right-80 z-50 w-80 h-96 bg-slate-900/90 backdrop-blur-xl border border-white/10 rounded-xl shadow-2xl flex flex-col overflow-hidden animate-in slide-in-from-bottom-10 fade-in duration-200">
-            {/* Header */}
             <div className="h-14 bg-white/5 border-b border-white/5 flex items-center justify-between px-4">
                 <div className="flex items-center gap-3">
                     <div className="relative">
@@ -110,19 +122,21 @@ const FriendChat: React.FC<FriendChatProps> = ({ friend, onClose }) => {
                     </div>
                 </div>
                 <div className="flex items-center gap-2">
-                    <button className="p-1.5 text-gray-400 hover:text-white hover:bg-white/10 rounded transition-colors">
+                    <button type="button" className="p-1.5 text-gray-400 hover:text-white hover:bg-white/10 rounded transition-colors">
                         <Phone size={14} />
                     </button>
-                    <button className="p-1.5 text-gray-400 hover:text-white hover:bg-white/10 rounded transition-colors">
+                    <button type="button" className="p-1.5 text-gray-400 hover:text-white hover:bg-white/10 rounded transition-colors">
                         <Video size={14} />
                     </button>
                     <button 
+                        type="button"
                         onClick={() => setIsMinimized(true)}
                         className="p-1.5 text-gray-400 hover:text-white hover:bg-white/10 rounded transition-colors"
                     >
                         <Minimize2 size={14} />
                     </button>
                     <button 
+                        type="button"
                         onClick={onClose}
                         className="p-1.5 text-gray-400 hover:text-red-400 hover:bg-red-500/10 rounded transition-colors"
                     >
@@ -131,8 +145,12 @@ const FriendChat: React.FC<FriendChatProps> = ({ friend, onClose }) => {
                 </div>
             </div>
 
-            {/* Messages */}
             <div className="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-3 bg-black/20">
+                {messages.length === 0 && (
+                    <p className="text-center text-xs text-gray-500 pt-6 px-2">
+                        Messages stay on this device — say hi to start the thread.
+                    </p>
+                )}
                 {messages.map((msg) => (
                     <div 
                         key={msg.id} 
@@ -145,14 +163,16 @@ const FriendChat: React.FC<FriendChatProps> = ({ friend, onClose }) => {
                                     : 'bg-slate-700 text-gray-200 rounded-bl-none'
                             }`}
                         >
-                            {msg.text}
+                            <span>{msg.content}</span>
+                            <div className={`text-[10px] mt-1 opacity-70 ${msg.sender === 'me' ? 'text-right' : ''}`}>
+                                {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            </div>
                         </div>
                     </div>
                 ))}
                 <div ref={messagesEndRef} />
             </div>
 
-            {/* Input */}
             <div className="p-3 bg-white/5 border-t border-white/5">
                 <div className="relative flex items-center">
                     <input
@@ -164,14 +184,15 @@ const FriendChat: React.FC<FriendChatProps> = ({ friend, onClose }) => {
                         className="w-full bg-black/40 border border-white/10 rounded-full pl-4 pr-24 py-2.5 text-sm text-white focus:outline-none focus:border-blue-500/50 focus:bg-black/60 transition-all placeholder:text-gray-500"
                     />
                     <div className="absolute right-2 flex items-center gap-1">
-                        <button className="p-1.5 text-gray-400 hover:text-white transition-colors">
+                        <button type="button" className="p-1.5 text-gray-400 hover:text-white transition-colors">
                             <Smile size={16} />
                         </button>
-                        <button className="p-1.5 text-gray-400 hover:text-white transition-colors">
+                        <button type="button" className="p-1.5 text-gray-400 hover:text-white transition-colors">
                             <Paperclip size={16} />
                         </button>
                         <button 
-                            onClick={handleSend}
+                            type="button"
+                            onClick={() => handleSend()}
                             disabled={!inputValue.trim()}
                             className="p-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-full transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                         >

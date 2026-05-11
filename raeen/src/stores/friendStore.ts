@@ -10,7 +10,6 @@ interface FriendState {
     removeFriend: (id: string) => Promise<void>;
     importSteamFriends: () => Promise<void>;
     syncFriends: () => Promise<void>;
-    simulateActivity: () => Promise<void>;
 }
 
 export const useFriendStore = create<FriendState>((set) => ({
@@ -30,8 +29,9 @@ export const useFriendStore = create<FriendState>((set) => ({
 
     addFriend: async (username: string, platform?: string) => {
         try {
-            const newFriend = await window.ipcRenderer.invoke('friends:add', username, platform);
-            set(state => ({ friends: [...state.friends, newFriend] }));
+            await window.ipcRenderer.invoke('friends:add', username, platform ?? 'steam');
+            const result = await window.ipcRenderer.invoke('friends:getAll');
+            set({ friends: Array.isArray(result) ? result : [] });
         } catch (error) {
             console.error('Failed to add friend:', error);
         }
@@ -49,11 +49,12 @@ export const useFriendStore = create<FriendState>((set) => ({
     importSteamFriends: async () => {
         set({ isLoading: true });
         try {
-            const newFriends = await window.ipcRenderer.invoke('friends:importSteam');
-            set(state => ({ 
-                friends: [...state.friends, ...newFriends],
-                isLoading: false 
-            }));
+            await window.ipcRenderer.invoke('friends:importSteam');
+            const result = await window.ipcRenderer.invoke('friends:getAll');
+            set({
+                friends: Array.isArray(result) ? result : [],
+                isLoading: false,
+            });
         } catch (error) {
             console.error('Failed to import Steam friends:', error);
             set({ isLoading: false });
@@ -70,15 +71,6 @@ export const useFriendStore = create<FriendState>((set) => ({
         } catch (error) {
             console.error('Failed to sync friends:', error);
             set({ isLoading: false });
-        }
-    },
-
-    simulateActivity: async () => {
-        try {
-            const result = await window.ipcRenderer.invoke('friends:simulate');
-            set({ friends: result });
-        } catch (error) {
-            console.error('Failed to simulate activity:', error);
         }
     }
 }));

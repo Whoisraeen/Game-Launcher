@@ -1470,12 +1470,14 @@ app.whenReady().then(async () => {
         const fs = await import('node:fs/promises');
         const os = await import('node:os');
         const home = os.homedir();
+        const pf86 = process.env['ProgramFiles(x86)'];
         const candidates = [
           { game: 'NVIDIA DXCache',  platform: 'NVIDIA' as const,  path: path.join(home, 'AppData', 'Local', 'NVIDIA', 'DXCache') },
           { game: 'NVIDIA GLCache',  platform: 'NVIDIA' as const,  path: path.join(home, 'AppData', 'Local', 'NVIDIA', 'GLCache') },
           { game: 'AMD GLCache',     platform: 'AMD' as const,     path: path.join(home, 'AppData', 'Local', 'AMD', 'GLCache') },
           { game: 'AMD DxCache',     platform: 'AMD' as const,     path: path.join(home, 'AppData', 'Local', 'AMD', 'DxCache') },
           { game: 'D3D Shader Cache',platform: 'DirectX' as const, path: path.join(home, 'AppData', 'Local', 'D3DSCache') },
+          ...(pf86 ? [{ game: 'Steam shadercache', platform: 'Steam' as const, path: path.join(pf86, 'Steam', 'steamapps', 'shadercache') }] : []),
         ];
         const results: any[] = [];
         for (const c of candidates) {

@@ -85,7 +85,7 @@ const CommandPalette: React.FC<CommandPaletteProps> = ({ open, onClose, onNaviga
         const playable = games.filter(g =>
           !g.isHidden &&
           g.playStatus !== 'dropped' &&
-          (g.status === 'installed' || (g as any).isInstalled)
+          g.status === 'installed'
         );
         if (!playable.length) return;
         const pick = playable[Math.floor(Math.random() * playable.length)];

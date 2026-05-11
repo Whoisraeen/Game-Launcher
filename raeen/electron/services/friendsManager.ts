@@ -18,14 +18,12 @@ export interface Friend {
 }
 
 export class FriendsManager {
-    private simulationInterval: NodeJS.Timeout | null = null;
+    private steamSyncInterval: NodeJS.Timeout | null = null;
     private notificationService?: NotificationService;
     private previousFriendStates: Map<string, { status: string; activity: string | null }> = new Map();
 
     constructor(notificationService?: NotificationService) {
         this.notificationService = notificationService;
-        // Production Mode: No fake seeding, no simulation
-        // this.seedInitialData(); 
         this.loadPreviousStates();
         
         // Only start real-time sync loop
@@ -43,34 +41,6 @@ export class FriendsManager {
                 activity: friend.activity || null,
             });
         });
-    }
-
-    private seedInitialData() {
-        const db = getDb();
-        try {
-            const row = db.prepare('SELECT COUNT(*) as count FROM friends').get() as { count: number };
-            if (row && row.count === 0) {
-                const initialFriends = [
-                    { username: 'Sarah_G', platform: 'xbox', status: 'playing', activity: 'Halo Infinite' },
-                    { username: 'Mike_T', platform: 'psn', status: 'playing', activity: 'Spider-Man 2' },
-                    { username: 'Alex_R', platform: 'steam', status: 'busy', activity: null },
-                    { username: 'Jessica_W', platform: 'steam', status: 'away', activity: null },
-                    { username: 'DriftKing_99', platform: 'steam', status: 'online', activity: null }
-                ];
-
-                initialFriends.forEach(f => {
-                    const id = uuidv4();
-                    const avatar = `https://api.dicebear.com/7.x/avataaars/svg?seed=${f.username}`;
-                    db.prepare(`
-                    INSERT INTO friends (id, username, avatar_url, status, activity, last_seen, platform, created_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                 `).run(id, f.username, avatar, f.status, f.activity, 'Just now', f.platform, Date.now());
-                });
-                console.log('Seeded initial friends data');
-            }
-        } catch (error) {
-            console.error('Failed to seed initial friends:', error);
-        }
     }
 
     getAll(): Friend[] {
@@ -130,93 +100,16 @@ export class FriendsManager {
         return true;
     }
 
-    // Simulation method for demo purposes - sets random status
-    simulateActivity() {
-        const db = getDb();
-        // Get all friends directly from DB to ensure we have the latest
-        const rows = db.prepare('SELECT * FROM friends').all();
-
-        const statuses = ['online', 'offline', 'playing', 'away', 'busy'];
-        const activities = ['Halo Infinite', 'Elden Ring', 'Cyberpunk 2077', 'Valorant', 'Minecraft', 'Spotify', 'Visual Studio Code', 'Apex Legends', 'Fortnite', 'Call of Duty'];
-
-        let changed = false;
-
-        rows.forEach((friend: any) => {
-            // 10% chance to change status per tick
-            if (Math.random() > 0.9) {
-                const previousState = this.previousFriendStates.get(friend.id);
-                const newStatus = statuses[Math.floor(Math.random() * statuses.length)];
-                let newActivity = null;
-
-                if (newStatus === 'playing') {
-                    newActivity = activities[Math.floor(Math.random() * activities.length)];
-                } else if (newStatus === 'online') {
-                     // Small chance to be "Just chatting" or similar
-                     newActivity = Math.random() > 0.8 ? 'Browsing Store' : null;
-                }
-
-                db.prepare('UPDATE friends SET status = ?, activity = ?, last_seen = ? WHERE id = ?')
-                  .run(newStatus, newActivity, new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}), friend.id);
-                changed = true;
-
-                // Trigger notifications for status changes
-                if (this.notificationService && previousState) {
-                    // Friend came online (from offline)
-                    if (previousState.status === 'offline' && (newStatus === 'online' || newStatus === 'playing')) {
-                        this.notificationService.notifyFriendOnline(friend.username, friend.platform || 'Unknown');
-                    }
-
-                    // Friend started playing a game
-                    if (newStatus === 'playing' && newActivity && previousState.activity !== newActivity) {
-                        this.notificationService.notifyFriendPlaying(friend.username, newActivity);
-                    }
-                }
-
-                // Update previous state
-                this.previousFriendStates.set(friend.id, {
-                    status: newStatus,
-                    activity: newActivity,
-                });
-            }
-
-            // Simulate incoming message (1% chance if online/playing)
-            if ((friend.status === 'online' || friend.status === 'playing') && Math.random() > 0.99) {
-                const messages = [
-                    "Hey, want to play?",
-                    "Check out this new game!",
-                    "I'm stuck on this level...",
-                    "LOL did you see that?",
-                    "Coming online in 5 mins",
-                    "GG last night!",
-                    "Are you getting the new DLC?",
-                    "Wait for me!"
-                ];
-                const content = messages[Math.floor(Math.random() * messages.length)];
-                this.sendMessage(friend.id, content, friend.username);
-                
-                if (this.notificationService) {
-                    this.notificationService.notify(friend.username, content);
-                }
-            }
-        });
-
-        if (changed) {
-            this.broadcastUpdate();
-        }
-
-        return this.getAll();
-    }
-
     startRealTimeSync() {
-        if (this.simulationInterval) clearInterval(this.simulationInterval);
+        if (this.steamSyncInterval) clearInterval(this.steamSyncInterval);
         
         // Initial sync
         this.syncSteamFriendsRealTime();
 
         // Run every 60 seconds to respect API rate limits while keeping data fresh
-        this.simulationInterval = setInterval(() => {
-             this.syncSteamFriendsRealTime().then(friends => {
-                 if (friends.length > 0) {
+        this.steamSyncInterval = setInterval(() => {
+             this.syncSteamFriendsRealTime().then(synced => {
+                 if (synced.length > 0) {
                      this.broadcastUpdate();
                  }
              });

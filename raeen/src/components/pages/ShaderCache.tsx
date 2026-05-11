@@ -17,21 +17,6 @@ interface ShaderCacheEntry {
 
 const STORAGE_KEY = 'raeen.shadercache.v1';
 
-const seedCaches = (): ShaderCacheEntry[] => {
-  // Seed with realistic dummy data so the page is useful without a backend.
-  const sample: Omit<ShaderCacheEntry, 'id' | 'lastModified'>[] = [
-    { game: 'Cyberpunk 2077',     platform: 'NVIDIA',  path: '%LOCALAPPDATA%\\NVIDIA\\DXCache',                     sizeBytes: 1.4e9,  fileCount: 4827, status: 'large' },
-    { game: 'Elden Ring',         platform: 'DirectX', path: '%LOCALAPPDATA%\\NVIDIA\\GLCache\\elden_ring',         sizeBytes: 612e6,  fileCount: 1893, status: 'healthy' },
-    { game: 'Steam (global)',     platform: 'Steam',   path: '%PROGRAMFILES(X86)%\\Steam\\steamapps\\shadercache', sizeBytes: 3.8e9,  fileCount: 13044, status: 'large' },
-    { game: 'Baldur’s Gate 3',    platform: 'DirectX', path: '%LOCALAPPDATA%\\Larian Studios\\Baldur\'s Gate 3\\PSO',sizeBytes: 282e6,  fileCount: 612,  status: 'healthy' },
-    { game: 'Halo Infinite',      platform: 'DirectX', path: '%LOCALAPPDATA%\\HaloInfinite\\Shaders',               sizeBytes: 92e6,   fileCount: 213,  status: 'corrupt' },
-    { game: 'Forza Horizon 5',    platform: 'NVIDIA',  path: '%LOCALAPPDATA%\\NVIDIA\\DXCache\\fh5',                sizeBytes: 0,      fileCount: 0,    status: 'empty' },
-    { game: 'AMD GPU Driver',     platform: 'AMD',     path: '%LOCALAPPDATA%\\AMD\\GLCache',                        sizeBytes: 743e6,  fileCount: 2891, status: 'large' },
-  ];
-  const now = Date.now();
-  return sample.map((s, i) => ({ ...s, id: `sc_${i}`, lastModified: now - i * 86400000 }));
-};
-
 const formatBytes = (bytes: number): string => {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 ** 2) return `${(bytes / 1024).toFixed(1)} KB`;
@@ -48,18 +33,37 @@ const statusMeta: Record<CacheStatus, { label: string; color: string; icon: Reac
 
 const ShaderCache: React.FC = () => {
   const [entries, setEntries] = useState<ShaderCacheEntry[]>([]);
+  const [persistReady, setPersistReady] = useState(false);
   const [scanning, setScanning] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [filter, setFilter] = useState<CacheStatus | 'all'>('all');
 
   useEffect(() => {
-    try {
-      const cached = localStorage.getItem(STORAGE_KEY);
-      setEntries(cached ? JSON.parse(cached) : seedCaches());
-    } catch { setEntries(seedCaches()); }
+    let cancelled = false;
+    (async () => {
+      const ipcRows = await window.ipcRenderer.invoke('shaderCache:scan').catch(() => []);
+      if (cancelled) return;
+      if (Array.isArray(ipcRows) && ipcRows.length > 0) {
+        setEntries(ipcRows as ShaderCacheEntry[]);
+      } else {
+        try {
+          const cached = localStorage.getItem(STORAGE_KEY);
+          if (cached) setEntries(JSON.parse(cached));
+        } catch {
+          setEntries([]);
+        }
+      }
+      setPersistReady(true);
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  useEffect(() => { localStorage.setItem(STORAGE_KEY, JSON.stringify(entries)); }, [entries]);
+  useEffect(() => {
+    if (!persistReady) return;
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(entries));
+  }, [entries, persistReady]);
 
   const filtered = useMemo(() => filter === 'all' ? entries : entries.filter(e => e.status === filter), [entries, filter]);
   const totals = useMemo(() => {
@@ -72,13 +76,9 @@ const ShaderCache: React.FC = () => {
   const scan = async () => {
     setScanning(true);
     try {
-      // Try a real IPC call if registered, otherwise fall back to local refresh.
       const result = await window.ipcRenderer.invoke('shaderCache:scan').catch(() => null);
       if (Array.isArray(result) && result.length) {
-        setEntries(result);
-      } else {
-        // Re-stamp lastModified to feel "scanned"
-        setEntries(prev => prev.map(e => ({ ...e, lastModified: Date.now() })));
+        setEntries(result as ShaderCacheEntry[]);
       }
     } finally {
       setScanning(false);
@@ -136,7 +136,7 @@ const ShaderCache: React.FC = () => {
           <span className="text-xs text-gray-500">{formatBytes(totals.totalSize)}</span>
         </div>
         <div className="flex h-3 rounded-full overflow-hidden bg-white/5">
-          {entries.filter(e => e.sizeBytes > 0).map((e, i) => (
+          {totals.totalSize > 0 && entries.filter(e => e.sizeBytes > 0).map((e, i) => (
             <div
               key={e.id}
               title={`${e.game}: ${formatBytes(e.sizeBytes)}`}
@@ -194,7 +194,11 @@ const ShaderCache: React.FC = () => {
           );
         })}
         {filtered.length === 0 && (
-          <p className="text-gray-500 text-center py-8 text-sm">No caches match this filter.</p>
+          <p className="text-gray-500 text-center py-8 text-sm">
+            {entries.length === 0
+              ? 'No shader caches loaded yet — click Scan System to detect NVIDIA/AMD/DirectX and Steam locations.'
+              : 'No caches match this filter.'}
+          </p>
         )}
       </div>
     </div>

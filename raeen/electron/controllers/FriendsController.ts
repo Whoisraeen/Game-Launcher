@@ -56,15 +56,6 @@ export class FriendsController {
             }
         });
 
-        ipcMain.handle('friends:simulate', () => {
-            try {
-                return this.friendsManager.simulateActivity();
-            } catch (error) {
-                console.error('Failed to simulate activity:', error);
-                return [];
-            }
-        });
-
         ipcMain.handle('friends:getMessages', (_, friendId: string) => {
             try {
                 return this.friendsManager.getMessages(friendId);

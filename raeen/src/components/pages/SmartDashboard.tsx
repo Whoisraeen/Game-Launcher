@@ -103,7 +103,7 @@ const GameRandomizer = ({ games }: { games: any[] }) => {
                 }
             } else {
                 // Simple randomizer if no mood selected
-                const filtered = games.filter(g => g.isInstalled && !g.isHidden);
+                const filtered = games.filter(g => g.status === 'installed' && !g.isHidden);
                 if (filtered.length > 0) {
                     result = filtered[Math.floor(Math.random() * filtered.length)];
                 }

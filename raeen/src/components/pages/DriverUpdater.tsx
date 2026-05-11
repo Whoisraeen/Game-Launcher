@@ -27,13 +27,6 @@ const VENDOR_LINKS: Record<string, { label: string; url: string }> = {
   Realtek:  { label: 'Realtek Drivers', url: 'https://www.realtek.com/en/downloads' },
 };
 
-const seed = (): DriverEntry[] => ([
-  { id: 'd_gpu',      kind: 'gpu',      vendor: 'NVIDIA',     device: 'GeForce RTX 4070',           current: '551.86',  latest: '566.14',   status: 'update-available', size: 800e6, releaseNotesUrl: 'https://www.nvidia.com/Download/index.aspx' },
-  { id: 'd_chipset',  kind: 'chipset',  vendor: 'AMD',        device: 'Ryzen Chipset',              current: '5.10.0',  latest: '5.10.0',   status: 'up-to-date' },
-  { id: 'd_audio',    kind: 'audio',    vendor: 'Realtek',    device: 'High Definition Audio',      current: '6.0.9285', latest: '6.0.9523', status: 'update-available', size: 220e6 },
-  { id: 'd_net',      kind: 'network',  vendor: 'Intel',      device: 'Wi-Fi 6 AX211',              current: '22.180.0',latest: '22.260.0', status: 'critical',         size: 105e6 },
-]);
-
 const kindMeta: Record<DriverKind, { label: string; icon: React.ReactNode; tone: string }> = {
   gpu:     { label: 'GPU',     icon: <MonitorSmartphone size={16} />, tone: 'text-purple-300' },
   chipset: { label: 'Chipset', icon: <Cpu size={16} />,                tone: 'text-blue-300' },
@@ -52,24 +45,48 @@ const formatMb = (n?: number) => n ? `${(n / 1e6).toFixed(0)} MB` : '—';
 
 const DriverUpdater: React.FC = () => {
   const [drivers, setDrivers] = useState<DriverEntry[]>([]);
+  const [persistReady, setPersistReady] = useState(false);
   const [checking, setChecking] = useState(false);
   const [installing, setInstalling] = useState<Set<string>>(new Set());
   const [autoUpdate, setAutoUpdate] = useState(false);
   const [lastChecked, setLastChecked] = useState<Date | null>(null);
 
   useEffect(() => {
-    try {
-      const cached = localStorage.getItem(STORAGE_KEY);
-      setDrivers(cached ? JSON.parse(cached) : seed());
-    } catch { setDrivers(seed()); }
-    setAutoUpdate(localStorage.getItem('raeen.drivers.auto') === 'true');
-    try {
-      const lc = localStorage.getItem('raeen.drivers.lastChecked');
-      if (lc) setLastChecked(new Date(lc));
-    } catch {}
+    let cancelled = false;
+    (async () => {
+      let rows = await window.ipcRenderer.invoke('drivers:checkUpdates').catch(() => null);
+      if (!Array.isArray(rows) || !rows.length) {
+        rows = await window.ipcRenderer.invoke('drivers:check').catch(() => null);
+      }
+      if (cancelled) return;
+      if (Array.isArray(rows) && rows.length) {
+        setDrivers(rows as DriverEntry[]);
+      } else {
+        try {
+          const cached = localStorage.getItem(STORAGE_KEY);
+          if (cached) setDrivers(JSON.parse(cached));
+        } catch {
+          setDrivers([]);
+        }
+      }
+      setAutoUpdate(localStorage.getItem('raeen.drivers.auto') === 'true');
+      try {
+        const lc = localStorage.getItem('raeen.drivers.lastChecked');
+        if (lc) setLastChecked(new Date(lc));
+      } catch {
+        /* ignore */
+      }
+      setPersistReady(true);
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  useEffect(() => { localStorage.setItem(STORAGE_KEY, JSON.stringify(drivers)); }, [drivers]);
+  useEffect(() => {
+    if (!persistReady) return;
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(drivers));
+  }, [drivers, persistReady]);
   useEffect(() => { localStorage.setItem('raeen.drivers.auto', String(autoUpdate)); }, [autoUpdate]);
 
   const summary = useMemo(() => {
@@ -220,6 +237,9 @@ const DriverUpdater: React.FC = () => {
             </motion.div>
           );
         })}
+        {drivers.length === 0 && (
+          <p className="text-gray-500 text-center py-10 text-sm">No driver data yet — click Check Updates to scan this PC.</p>
+        )}
       </div>
     </div>
   );
