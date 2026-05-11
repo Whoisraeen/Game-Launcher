@@ -371,10 +371,14 @@ export class CrashAnalyzerService {
    */
   private async getRecentCrashLogs(appName: string): Promise<string[]> {
     try {
-      // Query Windows Event Log for application crashes in the last hour
-      const command = `wevtutil qe Application /c:20 /rd:true /f:text /q:"*[System[Provider[@Name='Application Error'] and TimeCreated[timediff(@SystemTime) <= 3600000]]]"`;
+      // BUG-036: switch console codepage to UTF-8 first so wevtutil's localized
+      // event-log text decodes correctly. Without `chcp 65001`, Node decodes
+      // the OEM codepage and mangles non-ASCII characters (German/French/JP/etc.).
+      const command =
+        `chcp 65001 >nul && wevtutil qe Application /c:20 /rd:true /f:text ` +
+        `/q:"*[System[Provider[@Name='Application Error'] and TimeCreated[timediff(@SystemTime) <= 3600000]]]"`;
 
-      const { stdout } = await execAsync(command);
+      const { stdout } = await execAsync(command, { encoding: 'utf8' });
 
       // Filter logs related to the game
       const logs = stdout.split('\n')

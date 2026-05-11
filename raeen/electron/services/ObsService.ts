@@ -64,11 +64,14 @@ export class ObsService {
         }
 
         try {
+            // BUG-071: do NOT mutate isConnected here. The 'ConnectionOpened'
+            // and 'ConnectionClosed' event listeners are the single source of
+            // truth — duplicating state in the connect() promise creates a
+            // race where a quick disconnect() can flip to connected=true after
+            // the user already disconnected.
             await this.obs.connect(this.config.address, this.config.password);
-            this.isConnected = true;
-            return true;
+            return this.isConnected;
         } catch (error) {
-            this.isConnected = false;
             console.error('Failed to connect to OBS:', error);
             throw error;
         }
@@ -77,7 +80,7 @@ export class ObsService {
     public async disconnect(): Promise<void> {
         if (this.isConnected) {
             await this.obs.disconnect();
-            this.isConnected = false;
+            // BUG-071: state will be set by 'ConnectionClosed' event listener.
         }
     }
 

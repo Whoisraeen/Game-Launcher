@@ -1,13 +1,74 @@
-import { exec } from 'child_process';
+import { exec, execFile } from 'child_process';
 import util from 'util';
 
 const execAsync = util.promisify(exec);
+const execFileAsync = util.promisify(execFile);
 
-const SYSTEM_SAFELIST = [
-  'explorer.exe', 'svchost.exe', 'csrss.exe', 'wininit.exe', 'winlogon.exe', 
-  'services.exe', 'lsass.exe', 'smss.exe', 'taskmgr.exe', 'registry.exe', 
-  'fontdrvhost.exe', 'dwm.exe', 'electron.exe' // Don't throttle ourselves
+// BUG-012: built-in safelist + user-extendable list persisted to localStorage
+// (read in preload via the renderer; here we read from a JSON file in userData).
+const BUILTIN_SAFELIST = [
+  'explorer.exe', 'svchost.exe', 'csrss.exe', 'wininit.exe', 'winlogon.exe',
+  'services.exe', 'lsass.exe', 'smss.exe', 'taskmgr.exe', 'registry.exe',
+  'fontdrvhost.exe', 'dwm.exe', 'electron.exe', // Don't throttle ourselves
+  'discord.exe', 'discordcanary.exe', 'discordptb.exe', // user-facing tools commonly trusted
+  'obs64.exe', 'obs32.exe', 'streamlabs obs.exe',
+  'spotify.exe',
 ];
+
+let userSafelistCache: string[] = [];
+let userSafelistLoaded = false;
+
+async function loadUserSafelist(): Promise<string[]> {
+  if (userSafelistLoaded) return userSafelistCache;
+  try {
+    const { app } = await import('electron');
+    const fs = await import('node:fs/promises');
+    const path = await import('node:path');
+    const file = path.join(app.getPath('userData'), 'process-safelist.json');
+    const raw = await fs.readFile(file, 'utf8').catch(() => '[]');
+    const parsed = JSON.parse(raw);
+    userSafelistCache = Array.isArray(parsed) ? parsed.map(s => String(s).toLowerCase()) : [];
+  } catch {
+    userSafelistCache = [];
+  }
+  userSafelistLoaded = true;
+  return userSafelistCache;
+}
+
+export async function setUserSafelist(list: string[]): Promise<void> {
+  try {
+    const { app } = await import('electron');
+    const fs = await import('node:fs/promises');
+    const path = await import('node:path');
+    const file = path.join(app.getPath('userData'), 'process-safelist.json');
+    userSafelistCache = list.map(s => String(s).toLowerCase());
+    userSafelistLoaded = true;
+    await fs.writeFile(file, JSON.stringify(userSafelistCache, null, 2), 'utf8');
+  } catch (err) {
+    console.error('Failed to persist user safelist:', err);
+  }
+}
+
+export function getUserSafelist(): string[] {
+  return [...userSafelistCache];
+}
+
+function isSafelistedNow(name: string): boolean {
+  const n = name.toLowerCase();
+  return BUILTIN_SAFELIST.includes(n) || userSafelistCache.includes(n);
+}
+
+const SYSTEM_SAFELIST = new Proxy([] as string[], {
+  // Backward-compat shim: any `.includes(name)` call delegates to the dynamic check.
+  get(_t, prop) {
+    if (prop === 'includes') return (name: string) => isSafelistedNow(name);
+    if (prop === Symbol.iterator) return [...BUILTIN_SAFELIST, ...userSafelistCache][Symbol.iterator].bind([...BUILTIN_SAFELIST, ...userSafelistCache]);
+    return undefined;
+  },
+});
+
+// Trigger initial load (fire-and-forget — the proxy reads cache directly thereafter).
+void loadUserSafelist();
 
 export class ProcessManager {
   private throttledPids: number[] = [];
@@ -202,8 +263,19 @@ export class ProcessManager {
         let freedCount = 0;
         for (const proc of idleProcesses.slice(0, 10)) { // Limit to 10 processes
           try {
-            // Use PowerShell to empty working set (cached memory)
-            await execAsync(`powershell -Command "$p = Get-Process -Id ${proc.pid} -ErrorAction SilentlyContinue; if($p) { $p.MinWorkingSet = 1; $p.MaxWorkingSet = 1 }"`);
+            // BUG-051: setting MaxWorkingSet=1 byte forces immediate page-thrashing
+            // and can crash the target process. The correct trim-only call is to
+            // use SetProcessWorkingSetSizeEx with (-1, -1) (a.k.a. EmptyWorkingSet),
+            // which tells Windows to swap pages out without limiting future growth.
+            // Note: PowerShell's $p.MaxWorkingSet setter rejects -1, so we go via
+            // the kernel32 API directly through Add-Type.
+            const pidNum = Number(proc.pid);
+            if (!Number.isInteger(pidNum) || pidNum <= 0) continue;
+            const ps = `$sig = '[DllImport(\\"psapi.dll\\")] public static extern bool EmptyWorkingSet(IntPtr h);';\n` +
+                       `$t = Add-Type -MemberDefinition $sig -Name Psapi -Namespace Win32 -PassThru;\n` +
+                       `$p = Get-Process -Id ${pidNum} -ErrorAction SilentlyContinue;\n` +
+                       `if($p) { [void]$t::EmptyWorkingSet($p.Handle) }`;
+            await execFileAsync('powershell', ['-NoProfile', '-Command', ps]);
             freedCount++;
           } catch (e) {
             // Process might have closed, skip

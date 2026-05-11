@@ -1,7 +1,20 @@
 import { app, shell } from 'electron';
 import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
-import { exec } from 'child_process';
+import { exec, execFile, spawn } from 'child_process';
+
+// BUG-050: parse a launch-options string into argv, respecting double-quoted segments.
+// Avoids shell interpolation entirely.
+function tokenizeLaunchOptions(opts: string): string[] {
+    if (!opts) return [];
+    const out: string[] = [];
+    const re = /"([^"]*)"|(\S+)/g;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(opts)) !== null) {
+        out.push(m[1] !== undefined ? m[1] : m[2]);
+    }
+    return out;
+}
 import { EventEmitter } from 'events';
 import { getDb } from '../database';
 import { DatabaseWorkerClient } from '../database/dbClient';
@@ -543,11 +556,12 @@ export class GameManager extends EventEmitter {
         // Set Discord Activity
         DiscordManager.getInstance().setActivity(game.title, 'Playing');
 
+        // BUG-049: instantiate once and reuse across this launch path.
+        const settingsManager = new SettingsManager();
+        const settings = settingsManager.getAllSettings();
+
         // Start Session Monitoring (Breaks, Time Limits)
         try {
-            const settingsManager = new SettingsManager();
-            const settings = settingsManager.getAllSettings();
-            
             // Check for planned session
             const plannedSession = this.gamingSessionService.getSessionForGameNow(game.id);
             
@@ -576,8 +590,7 @@ export class GameManager extends EventEmitter {
 
         // Performance Optimization
         try {
-            const settingsManager = new SettingsManager();
-            const settings = settingsManager.getAllSettings();
+            // BUG-049: reuse the settings/settingsManager instance from above.
             if (settings.performance.optimizeOnLaunch && this.performanceService) {
                 console.log('Triggering auto-optimization...');
                 this.performanceService.optimizeSystem(game.executable ? path.basename(game.executable) : undefined)
@@ -606,7 +619,8 @@ export class GameManager extends EventEmitter {
                         console.warn('Epic protocol launch failed, falling back to executable', e);
                         if (game.executable) {
                             const execPath = path.join(game.install_path, game.executable);
-                            exec(`"${execPath}" ${launchOptions}`, { cwd: game.install_path });
+                            // BUG-050: argv-based launch, no shell interpolation
+                            execFile(execPath, tokenizeLaunchOptions(launchOptions), { cwd: game.install_path }, () => {});
                         } else {
                             throw new Error('No executable found for Epic game fallback');
                         }
@@ -618,11 +632,11 @@ export class GameManager extends EventEmitter {
                         await shell.openExternal(launchCommand);
                     } else if (game.executable) {
                         const execPath = path.join(game.install_path, game.executable);
-                        const command = `"${execPath}" ${launchOptions}`;
-                        exec(command, { cwd: game.install_path });
+                        // BUG-050
+                        execFile(execPath, tokenizeLaunchOptions(launchOptions), { cwd: game.install_path }, () => {});
                     } else {
                         throw new Error(`Cannot launch game: No executable or launch URI found for ${game.title}`);
-                    } 
+                    }
                     break;
                 case 'origin':
                     await shell.openExternal(`origin://launchgame/${game.platform_id}`);
@@ -636,7 +650,8 @@ export class GameManager extends EventEmitter {
                 case 'riot':
                     const riotCommand = this.scanner.getLaunchCommand('riot', game.platform_id);
                     if (riotCommand) {
-                        exec(riotCommand);
+                        // Riot uses a deeplink URL — open via shell (not exec) to avoid shell parsing.
+                        await shell.openExternal(riotCommand);
                     }
                     break;
                 case 'battlenet':
@@ -649,14 +664,20 @@ export class GameManager extends EventEmitter {
                 default:
                     if (game.executable && game.install_path) {
                         const execPath = path.join(game.install_path, game.executable);
-                        const command = `"${execPath}" ${launchOptions}`;
-                        console.log(`Executing: ${command} in ${game.install_path}`);
-                        exec(command, { cwd: game.install_path });
+                        const args = tokenizeLaunchOptions(launchOptions);
+                        console.log(`Spawning: ${execPath} ${args.join(' ')} in ${game.install_path}`);
+                        // BUG-050: spawn with argv array, no shell.
+                        execFile(execPath, args, { cwd: game.install_path }, () => {});
                     } else if (game.platform === 'emulated') {
                          const launchInfo = this.scanner.emulationService.getLaunchCommand(game.platform_id);
                         if (launchInfo) {
-                            console.log(`Launching Emulated game: ${launchInfo.command}`);
-                            exec(launchInfo.command, { cwd: launchInfo.cwd });
+                            console.log(`Launching Emulated game: ${launchInfo.exe} ${launchInfo.args?.join(' ') || ''}`);
+                            // BUG-070: emulator launches must also use argv form.
+                            if (launchInfo.exe) {
+                                execFile(launchInfo.exe, launchInfo.args || [], { cwd: launchInfo.cwd }, () => {});
+                            } else {
+                                throw new Error('Emulator launch info missing exe');
+                            }
                         } else {
                             throw new Error(`Cannot launch emulated game: Configuration not found for ${game.title}`);
                         }

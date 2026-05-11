@@ -1,8 +1,15 @@
-import { exec } from 'child_process';
+import { exec, execFile } from 'child_process';
 import { promisify } from 'util';
 import si from 'systeminformation';
 
 const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
+
+// BUG-055: tight allow-list for device IDs we will pass into PowerShell.
+// Windows audio device IDs look like {0.0.0.00000000}.{guid}, paths, or numeric indexes.
+function isSafeDeviceId(id: string): boolean {
+    return typeof id === 'string' && id.length < 200 && /^[A-Za-z0-9_.,:\-\\{}/ ]+$/.test(id);
+}
 
 export interface AudioDevice {
     id: string;
@@ -35,8 +42,22 @@ export class AudioService {
     }
 
     private async getDevicesViaPowerShell(): Promise<AudioDevice[]> {
-        const { stdout } = await execAsync(
-            `powershell -NoProfile -Command "Get-CimInstance Win32_SoundDevice | Select-Object Name, Status, DeviceID | ConvertTo-Json"`,
+        // BUG-054: try AudioDeviceCmdlets first to learn which device is actually default.
+        let defaultId: string | null = null;
+        try {
+            const { stdout: defOut } = await execFileAsync(
+                'powershell',
+                ['-NoProfile', '-Command', 'Get-AudioDevice -Playback | Select-Object -ExpandProperty ID'],
+                { timeout: 5000 }
+            );
+            defaultId = (defOut || '').trim() || null;
+        } catch {
+            // module not installed; we'll fall back to the legacy first-item heuristic below
+        }
+
+        const { stdout } = await execFileAsync(
+            'powershell',
+            ['-NoProfile', '-Command', 'Get-CimInstance Win32_SoundDevice | Select-Object Name, Status, DeviceID | ConvertTo-Json'],
             { timeout: 10000 }
         );
 
@@ -50,7 +71,8 @@ export class AudioService {
                 name: d.Name,
                 type: 'playback' as const,
                 status: d.Status || 'Unknown',
-                isDefault: idx === 0,
+                // BUG-054: prefer real default, fall back to first-item only when unknown.
+                isDefault: defaultId ? d.DeviceID === defaultId : idx === 0,
             }));
     }
 
@@ -73,9 +95,17 @@ export class AudioService {
                 return { success: false, error: 'Device not found' };
             }
 
+            // BUG-055: validate before any shell-adjacent call. Reject IDs with
+            // characters that could break out of the PowerShell single-quoted string.
+            if (!isSafeDeviceId(deviceId)) {
+                return { success: false, error: 'Invalid device id' };
+            }
+
             try {
-                await execAsync(
-                    `powershell -NoProfile -Command "Set-AudioDevice -ID '${deviceId}'"`,
+                // execFile + arg array — no template interpolation reaches the shell.
+                await execFileAsync(
+                    'powershell',
+                    ['-NoProfile', '-Command', `Set-AudioDevice -ID '${deviceId.replace(/'/g, "''")}'`],
                     { timeout: 10000 }
                 );
                 return { success: true };

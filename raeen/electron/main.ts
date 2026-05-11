@@ -1,7 +1,8 @@
 
-import { app, BrowserWindow, shell, ipcMain, dialog } from 'electron';
-import { fileURLToPath } from 'node:url';
+import { app, BrowserWindow, shell, ipcMain, dialog, protocol, net } from 'electron';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import path from 'node:path';
+import fs from 'node:fs';
 import { autoUpdater } from 'electron-updater';
 import { DatabaseWorkerClient } from './database/dbClient';
 import { initDatabase } from './database';
@@ -129,7 +130,9 @@ function createWindow() {
       preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: false, // Prefer contextBridge
       contextIsolation: true, // REQUIRED for contextBridge
-      webSecurity: false // Allow loading local images
+      webSecurity: true,                     // BUG-062: keep SOP intact
+      allowRunningInsecureContent: false,
+      sandbox: false,                        // preload uses Node-bridge APIs
     },
     icon: path.join(process.env.VITE_PUBLIC, 'electron-vite.svg'),
   })
@@ -168,8 +171,37 @@ app.on('activate', () => {
   }
 })
 
+// BUG-062: Register a privileged custom protocol so the renderer can load
+// local image files without needing webSecurity disabled. Files are only
+// served from a small allow-list (app userData, system temp).
+protocol.registerSchemesAsPrivileged([
+  { scheme: 'safe-file', privileges: { standard: true, supportFetchAPI: true, secure: true, bypassCSP: false, stream: true, corsEnabled: true } },
+]);
+
 // --- App Initialization ---
 app.whenReady().then(async () => {
+  // Wire safe-file:// → local file (whitelisted roots only)
+  const safeRoots = [
+    app.getPath('userData'),
+    app.getPath('pictures'),
+    app.getPath('temp'),
+    app.getPath('home'),
+  ].map(p => path.resolve(p));
+  protocol.handle('safe-file', async (req) => {
+    try {
+      const url = new URL(req.url);
+      // safe-file:///C:/Users/.../file.png → /C:/Users/.../file.png
+      const decoded = decodeURIComponent(url.pathname.replace(/^\//, ''));
+      const resolved = path.resolve(decoded);
+      const allowed = safeRoots.some(root => resolved.toLowerCase().startsWith(root.toLowerCase() + path.sep) || resolved.toLowerCase() === root.toLowerCase());
+      if (!allowed) return new Response('forbidden', { status: 403 });
+      if (!fs.existsSync(resolved)) return new Response('not found', { status: 404 });
+      return net.fetch(pathToFileURL(resolved).toString());
+    } catch (err) {
+      return new Response(`bad request: ${(err as Error).message}`, { status: 400 });
+    }
+  });
+
   try {
     // Initialize Database (Worker Client)
     // Note: initDatabase might still be needed for migration if migrator runs in main process?

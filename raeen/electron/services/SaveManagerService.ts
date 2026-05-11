@@ -6,6 +6,7 @@ import archiver from 'archiver';
 import unzipper from 'unzipper';
 import { getDb } from '../database';
 import { SupabaseService } from './supabaseService';
+import { v4 as uuidv4 } from 'uuid';
 
 interface SaveConfig {
     gameId: string;

@@ -7,6 +7,18 @@ if (ffmpegPath) {
     ffmpeg.setFfmpegPath(ffmpegPath);
 }
 
+// Safely parse FFprobe `avg_frame_rate` strings like "30000/1001", "30/1", or "0/0"
+// without using eval() — eval on FFprobe metadata is a known RCE vector.
+function parseFrameRate(input: unknown): number {
+    if (typeof input !== 'string') return 0;
+    const m = input.match(/^(\d+)\/(\d+)$/);
+    if (!m) return 0;
+    const num = Number(m[1]);
+    const den = Number(m[2]);
+    if (!den || !Number.isFinite(num) || !Number.isFinite(den)) return 0;
+    return num / den;
+}
+
 export interface VideoMetadata {
     duration: number;
     codec: string;
@@ -39,7 +51,7 @@ export class VideoEditorService {
                     codec: videoStream.codec_name || 'unknown',
                     width: videoStream.width || 0,
                     height: videoStream.height || 0,
-                    fps: eval(videoStream.avg_frame_rate || '0/0') || 0
+                    fps: parseFrameRate(videoStream.avg_frame_rate) || 0
                 });
             });
         });

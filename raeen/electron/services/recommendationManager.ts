@@ -269,10 +269,20 @@ export class RecommendationManager {
             .slice(0, 10);
     }
 
+    // BUG-059: per-game try/catch — one corrupt tags blob shouldn't wipe out
+    // every recommendation. Default to [] for the broken row only.
     private parseGames(games: Game[]): Game[] {
-        return games.map(g => ({
-            ...g,
-            tags: typeof g.tags === 'string' ? JSON.parse(g.tags || '[]') : (g.tags || [])
-        }));
+        return games.map(g => {
+            try {
+                return {
+                    ...g,
+                    tags: typeof g.tags === 'string'
+                        ? (g.tags ? JSON.parse(g.tags) : [])
+                        : (Array.isArray(g.tags) ? g.tags : []),
+                };
+            } catch {
+                return { ...g, tags: [] };
+            }
+        });
     }
 }

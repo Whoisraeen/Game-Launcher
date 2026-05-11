@@ -112,6 +112,23 @@ export class HardwareMonitor {
         };
     }
 
+    // BUG-044: cache fsSize() — it walks the filesystem and is heavy.
+    // Refresh at most once per minute; everything else (CPU/GPU/mem) stays live.
+    private fsSizeCache: any[] | null = null;
+    private fsSizeCacheAt = 0;
+    private async getFsSizeCached(): Promise<any[]> {
+        const TTL = 60_000;
+        const now = Date.now();
+        if (this.fsSizeCache && now - this.fsSizeCacheAt < TTL) return this.fsSizeCache;
+        try {
+            this.fsSizeCache = await si.fsSize();
+            this.fsSizeCacheAt = now;
+        } catch {
+            if (!this.fsSizeCache) this.fsSizeCache = [];
+        }
+        return this.fsSizeCache;
+    }
+
     async getStats(): Promise<SystemStats> {
         try {
             const [cpuLoad, cpuTemp, cpuCurrentSpeed, cpu, mem, graphics, fsSize] = await Promise.all([
@@ -121,7 +138,7 @@ export class HardwareMonitor {
                 si.cpu(),
                 si.mem(),
                 si.graphics(),
-                si.fsSize()
+                this.getFsSizeCached(),
             ]);
 
             const gpus = graphics.controllers.map(g => ({

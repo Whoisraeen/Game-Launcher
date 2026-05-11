@@ -1,11 +1,17 @@
 import DiscordRPC from 'discord-rpc';
 
-const CLIENT_ID = '1344426698654224445'; // Placeholder ID - Needs to be replaced with real App ID from Discord Portal
+// BUG-066: read the Discord application client ID from env first, then fall
+// back to the bundled default. Surface a clear status so consumers can show
+// the user what went wrong instead of silently failing.
+const DEFAULT_CLIENT_ID = '1344426698654224445';
+const CLIENT_ID = process.env.DISCORD_CLIENT_ID || DEFAULT_CLIENT_ID;
 
 export class DiscordManager {
     private static instance: DiscordManager;
     private rpc: DiscordRPC.Client;
     private isReady = false;
+    public lastError: string | null = null;
+    public clientId: string = CLIENT_ID;
 
     private constructor() {
         this.rpc = new DiscordRPC.Client({ transport: 'ipc' });
@@ -13,12 +19,19 @@ export class DiscordManager {
         this.rpc.on('ready', () => {
             console.log('Discord RPC Ready');
             this.isReady = true;
+            this.lastError = null;
             this.setIdle();
         });
 
         this.rpc.login({ clientId: CLIENT_ID }).catch(err => {
-            console.warn('Discord RPC login failed (Client ID might be invalid or Discord not running):', err);
+            const msg = `Discord RPC login failed: ${err?.message || err}. Client ID: ${CLIENT_ID}.`;
+            console.warn(msg);
+            this.lastError = msg;
         });
+    }
+
+    public getStatus(): { connected: boolean; clientId: string; error: string | null } {
+        return { connected: this.isReady, clientId: this.clientId, error: this.lastError };
     }
 
     public static getInstance(): DiscordManager {

@@ -182,13 +182,22 @@ export class HardwareCompatService {
 
         const cpuVerdict = judge(specs.cpu.cores, reqs.minCpuCores, reqs.recCpuCores);
         const ramVerdict = judge(specs.ram, reqs.minRamGb, reqs.recRamGb);
-        const gpuVerdict = judge(primaryGpuVram, reqs.minVramMb, reqs.recVramMb);
+        // BUG-068: integrated GPUs (Intel iGPUs especially) often report VRAM=0
+        // because they share system memory. Treating that as "Below Minimum"
+        // marks every game as failing GPU compat. Mark as Unknown instead so
+        // the user gets an accurate signal.
+        const gpuVerdict: Verdict = primaryGpuVram === 0
+            ? 'Unknown'
+            : judge(primaryGpuVram, reqs.minVramMb, reqs.recVramMb);
         const storageVerdict = judge(specs.storage, reqs.minStorageGb, reqs.recStorageGb);
 
         const verdicts = [cpuVerdict, ramVerdict, gpuVerdict, storageVerdict];
         let overall: Verdict;
-        if (verdicts.includes('Below Minimum')) overall = 'Below Minimum';
-        else if (verdicts.every(v => v === 'Exceeds')) overall = 'Exceeds';
+        // Unknown shouldn't pull the overall verdict down to Below Minimum.
+        const downgrading = verdicts.filter(v => v !== 'Unknown');
+        if (downgrading.includes('Below Minimum')) overall = 'Below Minimum';
+        else if (downgrading.length === 0) overall = 'Unknown';
+        else if (downgrading.every(v => v === 'Exceeds')) overall = 'Exceeds';
         else overall = 'Meets';
 
         return {

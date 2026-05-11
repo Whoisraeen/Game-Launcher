@@ -11,6 +11,11 @@ export class PlaytimeTracker {
   private startTime: number = 0;
   private lastUpdateTime: number = 0;
   private sessionId: number | null = null;
+  // BUG-045: track related/child process names so launchers that exit and spawn
+  // a different game executable don't terminate playtime tracking immediately.
+  private candidateProcessNames: Set<string> = new Set();
+  private graceMisses: number = 0;
+  private readonly GRACE_MISSES_LIMIT = 3; // ~90s with the 30s tick
 
   constructor() {
     this.processManager = new ProcessManager();
@@ -26,8 +31,14 @@ export class PlaytimeTracker {
 
     this.activeGameId = gameId;
     this.activeProcessName = path.basename(executablePath);
+    this.candidateProcessNames = new Set([this.activeProcessName.toLowerCase()]);
+    this.graceMisses = 0;
     this.startTime = Date.now();
     this.lastUpdateTime = this.startTime;
+
+    // BUG-045: snapshot processes shortly after launch so we capture any
+    // child the launcher spawned (e.g. game.exe via launcher.exe).
+    setTimeout(() => this.snapshotChildProcesses().catch(() => {}), 8_000);
 
     console.log(`Started tracking playtime for ${this.activeProcessName} (Game ID: ${gameId})`);
 
@@ -79,14 +90,45 @@ export class PlaytimeTracker {
   private async checkPlaytime() {
     if (!this.activeGameId || !this.activeProcessName) return;
 
-    const isRunning = await this.processManager.isProcessRunning(this.activeProcessName);
-
-    if (isRunning) {
-      await this.updatePlaytime();
-    } else {
-      // Game stopped
-      await this.stopTracking();
+    // BUG-045: consider tracking alive if ANY of the candidate process names
+    // are still running. This handles launchers that exec the real game
+    // process and exit themselves.
+    let anyRunning = false;
+    for (const name of this.candidateProcessNames) {
+      if (await this.processManager.isProcessRunning(name)) { anyRunning = true; break; }
     }
+
+    if (anyRunning) {
+      this.graceMisses = 0;
+      await this.updatePlaytime();
+      // Periodically refresh the candidate list (children may spawn later).
+      if (this.graceMisses === 0 && Math.random() < 0.2) await this.snapshotChildProcesses();
+    } else {
+      // Tolerate a few consecutive misses before declaring the session over —
+      // launcher → game handoff can have a window with neither process visible.
+      this.graceMisses++;
+      if (this.graceMisses >= this.GRACE_MISSES_LIMIT) await this.stopTracking();
+    }
+  }
+
+  // BUG-045: best-effort enumeration of processes spawned around the launch
+  // moment. We pull the list once and add any newish process whose parent
+  // is the original executable to the candidate set.
+  private async snapshotChildProcesses(): Promise<void> {
+    try {
+      const procs = await this.processManager.getProcessList?.();
+      if (!Array.isArray(procs)) return;
+      const root = (this.activeProcessName || '').toLowerCase();
+      for (const p of procs) {
+        const name = String(p?.name || '').toLowerCase();
+        if (!name) continue;
+        if (name === root) continue;
+        // Heuristic: anything reported with a parent matching our exe, OR
+        // with the same image path stem, becomes a candidate.
+        const parent = String(p?.parentName || '').toLowerCase();
+        if (parent === root) this.candidateProcessNames.add(name);
+      }
+    } catch { /* non-fatal */ }
   }
 
   dispose() {

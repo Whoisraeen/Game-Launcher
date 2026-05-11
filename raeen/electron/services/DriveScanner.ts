@@ -2,10 +2,11 @@ import fs from 'fs';
 import path from 'path';
 import si from 'systeminformation';
 import { getDb } from '../database';
-import { exec } from 'child_process';
+import { exec, execFile } from 'child_process';
 import util from 'util';
 
 const execAsync = util.promisify(exec);
+const execFileAsync = util.promisify(execFile);
 
 export interface DriveInfo {
     letter: string;
@@ -75,11 +76,8 @@ export class DriveScanner {
                     else if (phys.includes('ssd') || phys === 'ssd') type = 'SSD';
                     else if (phys.includes('hdd') || phys === 'hd') type = 'HDD';
                 }
-                if (type === 'Unknown') {
-                    for (const [, dtype] of driveTypeMap) {
-                        if (dtype !== 'Unknown') { type = dtype; break; }
-                    }
-                }
+                // BUG-073: do NOT borrow another drive's type. If we can't determine
+                // this drive's type, leave it as Unknown rather than mislabel it.
 
                 drives.push({
                     letter: `${letter}:\\`,
@@ -186,7 +184,8 @@ export class DriveScanner {
                 fs.mkdirSync(destParent, { recursive: true });
             }
 
-            await execAsync(`robocopy "${srcPath}" "${destPath}" /E /MOVE /R:1 /W:1`, { timeout: 600000 });
+            // BUG-063: spawn robocopy with argv array — no shell interpolation of paths.
+            await execFileAsync('robocopy', [srcPath, destPath, '/E', '/MOVE', '/R:1', '/W:1'], { timeout: 600000 });
 
             db.prepare('UPDATE games SET install_path = ? WHERE id = ?').run(destPath, gameId);
 

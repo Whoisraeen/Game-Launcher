@@ -169,21 +169,33 @@ export class EmulationService {
         return foundGames;
     }
 
-    getLaunchCommand(gameId: string): { command: string, cwd: string } | undefined {
+    // BUG-070: return executable + argv array instead of a shell string,
+    // so the caller can spawn() safely without shell interpolation.
+    // Backwards-compat: also include `command` for any legacy callers.
+    getLaunchCommand(gameId: string): { exe: string; args: string[]; cwd: string; command: string } | undefined {
         const game = this.games.find(g => g.id === gameId);
         if (!game) return undefined;
 
         const emulator = this.emulators.find(e => e.id === game.emulatorId);
         if (!emulator) return undefined;
 
-        // Replace placeholders
-        // We might need a way to specify 'core' for RetroArch if it's generic
-        // For now, simple replacement
-        let args = emulator.arguments.replace('{rom}', `"${game.romPath}"`);
+        // Tokenize the configured argument template, then substitute {rom} → actual path
+        // (without injecting quotes, since the spawned process gets the path as one argv entry).
+        const rawArgs = emulator.arguments || '';
+        const tokens: string[] = [];
+        const re = /"([^"]*)"|(\S+)/g;
+        let m: RegExpExecArray | null;
+        while ((m = re.exec(rawArgs)) !== null) {
+            tokens.push(m[1] !== undefined ? m[1] : m[2]);
+        }
+        const args = tokens.map(t => t.replace('{rom}', game.romPath));
 
         return {
-            command: `"${emulator.executable}" ${args}`,
-            cwd: path.dirname(emulator.executable)
+            exe: emulator.executable,
+            args,
+            cwd: path.dirname(emulator.executable),
+            // Legacy string (only used for logging now); no longer parsed by exec()
+            command: `${emulator.executable} ${args.join(' ')}`,
         };
     }
 }

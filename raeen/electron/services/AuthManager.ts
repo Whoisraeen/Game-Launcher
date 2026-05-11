@@ -22,6 +22,7 @@ export class AuthManager {
         return new Promise((resolve) => {
             if (this.loginWindow) {
                 this.loginWindow.focus();
+                resolve(false); // BUG-067: focus existing instead of leaking a new pending Promise
                 return;
             }
 
@@ -32,43 +33,58 @@ export class AuthManager {
                 webPreferences: {
                     nodeIntegration: false,
                     contextIsolation: true,
-                    partition: 'persist:steam_auth' // Use persistent partition to save cookies
+                    partition: 'persist:steam_auth'
                 }
             });
 
             this.loginWindow.loadURL('https://steamcommunity.com/login/home/?goto=');
 
-            // Check for successful login by monitoring redirects or cookies
-            this.loginWindow.webContents.on('did-navigate', async (event, url) => {
-                if (url.includes('steamcommunity.com/id/') || url.includes('steamcommunity.com/profiles/')) {
-                    // Login successful
-                    const cookies = await session.fromPartition('persist:steam_auth').cookies.get({ domain: 'steamcommunity.com' });
-                    
-                    // Verify we have the essential auth cookie
-                    const sessionCookie = cookies.find(c => c.name === 'steamLoginSecure');
-                    
-                    if (sessionCookie) {
-                        // Extract Steam ID from URL or Cookie
-                        // steamLoginSecure format: steamid%7C%7Ctoken
-                        const steamId = sessionCookie.value.split('%7C%7C')[0];
-                        
-                        this.saveAuthToken('steam', {
-                            steamId: steamId,
-                            cookies: cookies
-                        });
+            // BUG-067: settle the Promise exactly once and add a hard timeout +
+            // crash listeners so a stalled or crashed login window can never
+            // hang the caller forever.
+            let settled = false;
+            const settle = (val: boolean) => {
+                if (settled) return;
+                settled = true;
+                clearTimeout(timeoutHandle);
+                if (this.loginWindow) {
+                    try { this.loginWindow.close(); } catch { /* */ }
+                    this.loginWindow = null;
+                }
+                resolve(val);
+            };
 
-                        if (this.loginWindow) {
-                            this.loginWindow.close();
-                            this.loginWindow = null;
+            const timeoutHandle = setTimeout(() => settle(false), 5 * 60 * 1000); // 5 min ceiling
+
+            this.loginWindow.webContents.on('did-navigate', async (_event, url) => {
+                if (url.includes('steamcommunity.com/id/') || url.includes('steamcommunity.com/profiles/')) {
+                    try {
+                        const cookies = await session.fromPartition('persist:steam_auth').cookies.get({ domain: 'steamcommunity.com' });
+                        const sessionCookie = cookies.find(c => c.name === 'steamLoginSecure');
+                        if (sessionCookie) {
+                            const steamId = sessionCookie.value.split('%7C%7C')[0];
+                            this.saveAuthToken('steam', { steamId, cookies });
+                            settle(true);
                         }
-                        resolve(true);
+                    } catch (err) {
+                        console.error('Steam login post-auth error:', err);
+                        settle(false);
                     }
                 }
             });
 
+            this.loginWindow.webContents.on('render-process-gone', (_e, details) => {
+                console.warn('Steam login renderer crashed:', details);
+                settle(false);
+            });
+            this.loginWindow.webContents.on('did-fail-load', (_e, code, desc) => {
+                if (code === -3) return; // user aborted navigation — not a hard failure
+                console.warn(`Steam login load failed: ${code} ${desc}`);
+            });
+
             this.loginWindow.on('closed', () => {
                 this.loginWindow = null;
-                resolve(false); // Closed without success
+                settle(false);
             });
         });
     }

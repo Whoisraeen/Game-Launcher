@@ -233,13 +233,29 @@ export class HealthCheckService {
       let prediction: 'safe' | 'monitor' | 'risk';
       let message: string;
 
-      // CPU thermal thresholds
-      const cpuCritical = cpuTemp > 85;
-      const cpuWarning = cpuTemp > 75;
+      // BUG-035: thresholds were hardcoded at 85°C, which trips false alarms
+      // on modern silicon (Ryzen 7000, Ada/RTX 40, M-series APUs all run hot
+      // by design). Tune by reported model — fall back to conservative defaults.
+      const cpuModel = (stats.cpu.model || '').toLowerCase();
+      const gpuModel = (stats.gpu.model || '').toLowerCase();
 
-      // GPU thermal thresholds
-      const gpuCritical = gpuTemp > 85;
-      const gpuWarning = gpuTemp > 80;
+      // CPU
+      let cpuCriticalLimit = 95, cpuWarningLimit = 85;
+      if (/ryzen 7|ryzen 9|ryzen.*7\d{3}|ryzen.*9\d{3}/.test(cpuModel)) { cpuCriticalLimit = 95; cpuWarningLimit = 88; }
+      else if (/i9-1[3-5]|i7-1[3-5]/.test(cpuModel))                    { cpuCriticalLimit = 100; cpuWarningLimit = 92; }
+      else if (/apple m\d/.test(cpuModel))                              { cpuCriticalLimit = 100; cpuWarningLimit = 90; }
+
+      // GPU
+      let gpuCriticalLimit = 90, gpuWarningLimit = 83;
+      if (/rtx 40|rtx 50/.test(gpuModel))                               { gpuCriticalLimit = 90; gpuWarningLimit = 84; }
+      else if (/rtx 30/.test(gpuModel))                                 { gpuCriticalLimit = 88; gpuWarningLimit = 82; }
+      else if (/rx 7\d{3}|rx 9\d{3}/.test(gpuModel))                    { gpuCriticalLimit = 95; gpuWarningLimit = 88; }
+      else if (/intel arc/.test(gpuModel))                              { gpuCriticalLimit = 95; gpuWarningLimit = 88; }
+
+      const cpuCritical = cpuTemp > cpuCriticalLimit;
+      const cpuWarning  = cpuTemp > cpuWarningLimit;
+      const gpuCritical = gpuTemp > gpuCriticalLimit;
+      const gpuWarning  = gpuTemp > gpuWarningLimit;
 
       if (cpuCritical || gpuCritical) {
         status = 'critical';

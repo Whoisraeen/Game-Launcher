@@ -3,8 +3,22 @@ import * as fs from 'fs/promises';
 import * as path from 'path';
 import { getDb } from '../database';
 
-const SUPABASE_URL = process.env.REACT_APP_SUPABASE_URL || 'https://trjmieefpmhkuimajvrk.supabase.co';
-const SUPABASE_ANON_KEY = process.env.REACT_APP_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRyam1pZWVmcG1oa3VpbWFqdnJrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQ2MTI4MzIsImV4cCI6MjA4MDE4ODgzMn0.UjxXCma4iojMYRKDVwx3gKa1m-u4gwXeoetdpAWbGKk';
+// BUG-046: credentials must be supplied via env (.env / launch env), never committed to git.
+// Read both common naming conventions; throw if missing so misconfiguration is loud.
+const SUPABASE_URL =
+  process.env.SUPABASE_URL ||
+  process.env.REACT_APP_SUPABASE_URL ||
+  process.env.VITE_SUPABASE_URL ||
+  '';
+const SUPABASE_ANON_KEY =
+  process.env.SUPABASE_ANON_KEY ||
+  process.env.REACT_APP_SUPABASE_ANON_KEY ||
+  process.env.VITE_SUPABASE_ANON_KEY ||
+  '';
+
+if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+  console.warn('[supabase] SUPABASE_URL or SUPABASE_ANON_KEY missing — cloud features will be disabled. Provide via .env.');
+}
 
 export interface CloudProfile {
   userId: string;
@@ -58,9 +72,17 @@ export class SupabaseService {
   private currentUser: User | null = null;
 
   constructor() {
-    this.client = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-    this.restoreSession();
+    // BUG-046: when env is missing we still construct a stub so callers don't
+    // crash, but every API call returns null/false until configured.
+    if (SUPABASE_URL && SUPABASE_ANON_KEY) {
+      this.client = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+      this.restoreSession();
+    } else {
+      this.client = null as any;
+    }
   }
+
+  isConfigured(): boolean { return !!this.client; }
 
   /**
    * Restore previous session if exists
@@ -293,10 +315,13 @@ export class SupabaseService {
 
       if (uploadError) throw uploadError;
 
-      // Get public URL
-      const { data: urlData } = this.client.storage
+      // BUG-060: game-saves bucket is private — getPublicUrl returns a 403/404
+      // for any authenticated-only or RLS-protected bucket. Use a signed URL
+      // (valid 1 year) so downloads actually work.
+      const { data: urlData, error: urlErr } = await this.client.storage
         .from('game-saves')
-        .getPublicUrl(storagePath);
+        .createSignedUrl(storagePath, 60 * 60 * 24 * 365);
+      if (urlErr) throw urlErr;
 
       // Save metadata to database
       const saveGame: CloudSaveGame = {
@@ -308,7 +333,7 @@ export class SupabaseService {
         fileName,
         fileSize,
         filePath,
-        cloudUrl: urlData.publicUrl,
+        cloudUrl: urlData?.signedUrl || '',
         uploadedAt: Date.now(),
         lastModified: Date.now(),
         deviceName: require('os').hostname()

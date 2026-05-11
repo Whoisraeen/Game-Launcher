@@ -44,18 +44,30 @@ export class NetworkService {
 
     private async pingSingle(host: string, label: string): Promise<PingResult> {
         try {
+            // BUG-041: don't depend on the OS-locale string of `ping`. Two safer paths:
+            // (1) parse individual reply latencies via the locale-agnostic
+            //     "time=Nms" / "time<1ms" / "Zeit=Nms" / "temps=Nms" tokens, or
+            // (2) compute the average ourselves from those numbers — always works.
             const { stdout } = await execAsync(
                 `ping -n 4 -w 2000 ${host}`,
                 { timeout: 15000 }
             );
 
-            const latencyMatch = stdout.match(/Average\s*=\s*(\d+)ms/i)
-                               || stdout.match(/Moyenne\s*=\s*(\d+)ms/i)
-                               || stdout.match(/Durchschnitt\s*=\s*(\d+)ms/i);
-            const lossMatch   = stdout.match(/(\d+)%\s*(loss|perdus|verloren)/i);
+            // Match any of the common "time/Zeit/temps/tiempo = Nms" tokens.
+            const replyLatencies: number[] = [];
+            const replyRe = /(?:time|zeit|temps|tiempo|tempo)[<=]\s*(\d+)\s*ms/gi;
+            let rm: RegExpExecArray | null;
+            while ((rm = replyRe.exec(stdout)) !== null) {
+                const v = parseInt(rm[1], 10);
+                if (Number.isFinite(v)) replyLatencies.push(v);
+            }
+            const latency = replyLatencies.length
+                ? Math.round(replyLatencies.reduce((a, b) => a + b, 0) / replyLatencies.length)
+                : -1;
 
-            const latency    = latencyMatch ? parseInt(latencyMatch[1], 10) : -1;
-            const packetLoss = lossMatch    ? parseInt(lossMatch[1], 10)    : 0;
+            // Packet loss: "(N% loss)" / "perdus" / "verloren" / "perdidos" — capture any.
+            const lossMatch = stdout.match(/(\d+)\s*%\s*(loss|perdus|verloren|perdidos|perdita|失|遗|소실|줄|drop)/i);
+            const packetLoss = lossMatch ? parseInt(lossMatch[1], 10) : (latency === -1 ? 100 : 0);
 
             let status: PingResult['status'] = 'good';
             if (latency === -1 || packetLoss === 100) status = 'timeout';

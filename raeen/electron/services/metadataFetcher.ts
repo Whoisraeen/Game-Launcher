@@ -102,9 +102,12 @@ export class MetadataFetcher {
         try {
             if (IGDB_CLIENT_ID !== 'YOUR_CLIENT_ID') {
                 const headers = await this.getIgdbHeaders();
-                // Fetch top 5 results
+                // BUG-065: escape any embedded double-quotes so a malicious or
+                // accidental title can't break out of the IGDB search literal
+                // and inject extra Apicalypse query commands.
+                const safeTitle = String(title).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
                 const body = `
-                    search "${title}";
+                    search "${safeTitle}";
                     fields name, summary, cover.url, artworks.url, rating, first_release_date, involved_companies.company.name, genres.name;
                     limit 5;
                 `;
@@ -193,10 +196,11 @@ export class MetadataFetcher {
         if (IGDB_CLIENT_ID === 'YOUR_CLIENT_ID') return null; // Skip if not configured
 
         const headers = await this.getIgdbHeaders();
-        
-        // IGDB Query: Search by name, get cover, screenshots, rating, etc.
+
+        // BUG-065: escape user input before embedding in Apicalypse query.
+        const safeQuery = String(query).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
         const body = `
-            search "${query}";
+            search "${safeQuery}";
             fields name, summary, cover.url, artworks.url, rating, first_release_date, involved_companies.company.name, genres.name;
             limit 1;
         `;

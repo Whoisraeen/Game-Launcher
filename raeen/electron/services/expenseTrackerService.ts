@@ -234,12 +234,17 @@ export class ExpenseTrackerService {
   }
 
   /**
-   * Import purchases from existing games in library
+   * Import purchases from existing games in library.
+   *
+   * BUG-048: previously fabricated $29.99 / $9.99 prices and stored them as
+   * real expenses, silently corrupting totals. Now we insert each game with
+   * price = 0 and source 'estimate' so the user can fill in the real number.
+   * If `markAsEstimate=false` is passed, we skip games we can't price at all.
    */
-  async importFromLibrary(): Promise<number> {
+  async importFromLibrary(opts?: { markAsEstimate?: boolean }): Promise<number> {
     const db = getDb();
+    const markAsEstimate = opts?.markAsEstimate ?? true;
 
-    // Get all games that don't already have a purchase record
     const games = db.prepare(`
       SELECT g.id, g.title, g.platform, g.genre, g.added_at
       FROM games g
@@ -251,30 +256,19 @@ export class ExpenseTrackerService {
     let imported = 0;
 
     for (const game of games) {
-      // Estimate purchase price based on platform (these are just estimates)
-      let estimatedPrice = 0;
-      const platform = game.platform?.toLowerCase() || '';
+      if (!markAsEstimate) continue; // Skip when caller doesn't want placeholders.
 
-      if (platform.includes('steam') || platform.includes('epic') || platform.includes('gog')) {
-        estimatedPrice = 29.99; // Average AAA game price
-      } else if (platform.includes('itch')) {
-        estimatedPrice = 9.99; // Average indie game price
-      }
-
-      // Only import if we have a reasonable estimate
-      if (estimatedPrice > 0) {
-        this.addPurchase({
-          gameId: game.id,
-          gameName: game.title,
-          platform: game.platform || 'Unknown',
-          price: estimatedPrice,
-          currency: 'USD',
-          purchaseDate: game.added_at || Date.now(),
-          genre: game.genre,
-          source: 'import'
-        });
-        imported++;
-      }
+      this.addPurchase({
+        gameId: game.id,
+        gameName: game.title,
+        platform: game.platform || 'Unknown',
+        price: 0,                     // ← real price unknown; user must fill in
+        currency: 'USD',
+        purchaseDate: game.added_at || Date.now(),
+        genre: game.genre,
+        source: 'estimate',           // ← clearly flagged so totals can ignore it
+      });
+      imported++;
     }
 
     return imported;

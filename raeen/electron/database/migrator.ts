@@ -39,7 +39,7 @@ const migrations: Migration[] = [
                     achievements_total INTEGER DEFAULT 0,
                     achievements_unlocked INTEGER DEFAULT 0,
                     play_status TEXT DEFAULT 'none',
-                    rating INTEGER DEFAULT 0,
+                    rating REAL DEFAULT 0,
                     user_notes TEXT,
                     added_at INTEGER,
                     sort_order INTEGER DEFAULT 0,
@@ -216,6 +216,9 @@ const migrations: Migration[] = [
                     detected_at INTEGER NOT NULL,
                     status TEXT DEFAULT 'pending',
                     priority TEXT DEFAULT 'normal',
+                    -- BUG-028: numeric companion so we sort by priority order
+                    -- (4 critical, 3 high, 2 normal, 1 low) instead of alpha.
+                    priority_rank INTEGER DEFAULT 2,
                     autoUpdate INTEGER DEFAULT 0,
                     progress INTEGER DEFAULT 0,
                     downloadSpeed TEXT,

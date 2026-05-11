@@ -8,21 +8,38 @@ export class FanControlService {
     private controlInterval: NodeJS.Timeout | null = null;
 
     constructor() {
-        // In production, binaries are usually in resources/bin
-        // In dev, we might look in electron/native/bin/Debug/net...
         this.exePath = path.join(process.cwd(), 'electron', 'native', 'FanControl.exe');
-        this.startControlLoop();
+        // BUG-052: do NOT spin up the 5s control loop on startup. The loop
+        // spawns FanControl.exe every tick — wasted work when the binary is
+        // missing or no curve has been configured. Start it lazily when the
+        // user actually defines a curve.
     }
 
     async setFanCurve(fanId: string, points: { temp: number; speed: number }[]) {
         this.fanCurves.set(fanId, points);
         console.log(`[FanControl] Curve set for ${fanId}:`, points);
+        // BUG-052: only start the loop if we have at least one curve and the binary exists.
+        if (this.fanCurves.size > 0 && fs.existsSync(this.exePath) && !this.controlInterval) {
+            this.startControlLoop();
+        }
         return true;
+    }
+
+    async clearFanCurve(fanId: string) {
+        this.fanCurves.delete(fanId);
+        if (this.fanCurves.size === 0) this.stopControlLoop();
+    }
+
+    private stopControlLoop() {
+        if (this.controlInterval) {
+            clearInterval(this.controlInterval);
+            this.controlInterval = null;
+        }
     }
 
     private startControlLoop() {
         if (this.controlInterval) clearInterval(this.controlInterval);
-        
+
         this.controlInterval = setInterval(async () => {
             if (this.fanCurves.size === 0) return;
 

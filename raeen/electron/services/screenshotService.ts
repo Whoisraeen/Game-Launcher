@@ -147,18 +147,29 @@ export class ScreenshotService {
       const stats = await fs.stat(filePath);
       const fileName = path.basename(filePath);
 
-      // Check if already in database
-      const existing = this.getScreenshotByPath(filePath);
-      if (existing) return null;
+      // BUG-042: derive a STABLE id from the file's content fingerprint so a
+      // moved/renamed screenshot still resolves to the same DB row (preserving
+      // tags, favorite, captions). We hash size+mtime+first-4KB instead of
+      // hashing the whole file (large screenshots) — collisions are vanishingly
+      // unlikely for user-shot images.
+      const stableId = await this.computeStableId(filePath, stats);
 
-      // Extract game name from path (heuristic)
+      // Check if already in database — first by stable id, then by path (legacy).
+      const existing = this.getScreenshotById(stableId) || this.getScreenshotByPath(filePath);
+      if (existing) {
+        // If we found it by path but with a random id, upgrade the row to use
+        // the stable id so future moves don't orphan metadata. (Best-effort.)
+        if (existing.id !== stableId) {
+          try { this.relinkScreenshotId(existing.id, stableId, filePath); } catch { /* non-fatal */ }
+        }
+        return null;
+      }
+
       const gameName = this.extractGameNameFromPath(filePath);
-
-      // Get image dimensions (would need image-size package in production)
       const { width, height } = await this.getImageDimensions(filePath);
 
       const screenshot: Screenshot = {
-        id: crypto.randomBytes(16).toString('hex'),
+        id: stableId,
         gameId: '', // Will be matched later
         gameName,
         filePath,
@@ -210,6 +221,51 @@ export class ScreenshotService {
     // In production, use the 'image-size' package
     // For now, return defaults
     return { width: 1920, height: 1080 };
+  }
+
+  // BUG-042: stable per-content id (path-independent)
+  private async computeStableId(filePath: string, stats: import('fs').Stats): Promise<string> {
+    try {
+      const fd = await fs.open(filePath, 'r');
+      try {
+        const buf = Buffer.alloc(4096);
+        const { bytesRead } = await fd.read(buf, 0, buf.length, 0);
+        const h = crypto.createHash('sha1');
+        h.update(String(stats.size));
+        h.update('|');
+        h.update(String(Math.floor(stats.mtimeMs)));
+        h.update('|');
+        h.update(buf.subarray(0, bytesRead));
+        return h.digest('hex').slice(0, 32);
+      } finally { await fd.close(); }
+    } catch {
+      // Fallback: hash size+mtime+path so we still avoid full random churn.
+      const h = crypto.createHash('sha1');
+      h.update(`${stats.size}|${stats.mtimeMs}|${filePath}`);
+      return h.digest('hex').slice(0, 32);
+    }
+  }
+
+  // BUG-042: lookup by stable id
+  private getScreenshotById(id: string): Screenshot | null {
+    try {
+      const db = getDb();
+      const row = db.prepare('SELECT * FROM screenshots WHERE id = ?').get(id) as any;
+      if (!row) return null;
+      return { ...row, tags: row.tags ? JSON.parse(row.tags) : [], isFavorite: Boolean(row.isFavorite) };
+    } catch { return null; }
+  }
+
+  // BUG-042: upgrade legacy random id rows to the stable id (and update path
+  // in case the file moved). Best-effort; skip silently on conflicts.
+  private relinkScreenshotId(oldId: string, newId: string, newPath: string) {
+    const db = getDb();
+    try {
+      db.prepare('UPDATE screenshots SET id = ?, filePath = ? WHERE id = ?').run(newId, newPath, oldId);
+    } catch {
+      // If a row with newId already exists, just refresh the path on the existing row.
+      try { db.prepare('UPDATE screenshots SET filePath = ? WHERE id = ?').run(newPath, newId); } catch { /* */ }
+    }
   }
 
   /**

@@ -43,38 +43,43 @@ export class NewsManager {
         return allNews.sort((a, b) => b.date - a.date);
     }
 
+    // BUG-069: handle both RSS <item> and Atom <entry>, namespaced tags
+    // (content:encoded, dc:date), and multi-line CDATA. Each item is matched
+    // by a depth-aware extraction so siblings don't cross-contaminate.
     private parseRSS(xml: string, sourceName: string): NewsItem[] {
         const items: NewsItem[] = [];
-        // Simple regex-based parsing (robust enough for standard RSS)
-        const itemRegex = /<item>([\s\S]*?)<\/item>/g;
-        let match;
+        // Match either <item>...</item> (RSS 2) or <entry>...</entry> (Atom).
+        const blockRegex = /<(item|entry)\b[^>]*>([\s\S]*?)<\/\1>/g;
+        let match: RegExpExecArray | null;
 
-        while ((match = itemRegex.exec(xml)) !== null) {
-            const itemContent = match[1];
-            
-            const titleMatch = /<title><!\[CDATA\[(.*?)\]\]><\/title>|<title>(.*?)<\/title>/.exec(itemContent);
-            const linkMatch = /<link>(.*?)<\/link>/.exec(itemContent);
-            const dateMatch = /<pubDate>(.*?)<\/pubDate>/.exec(itemContent);
-            const descMatch = /<description><!\[CDATA\[(.*?)\]\]><\/description>|<description>(.*?)<\/description>/.exec(itemContent);
-            const guidMatch = /<guid.*?>([\s\S]*?)<\/guid>/.exec(itemContent);
+        while ((match = blockRegex.exec(xml)) !== null) {
+            const isAtom = match[1] === 'entry';
+            const inner = match[2];
 
-            const title = titleMatch ? (titleMatch[1] || titleMatch[2]) : 'No Title';
-            const link = linkMatch ? linkMatch[1] : '';
-            const pubDate = dateMatch ? new Date(dateMatch[1]).getTime() : Date.now();
-            const description = descMatch ? (descMatch[1] || descMatch[2]) : '';
-            const guid = guidMatch ? guidMatch[1] : link;
+            const title = this.extractTag(inner, ['title']);
+            // RSS uses <link>url</link>, Atom uses <link href="url"/>.
+            let link = this.extractTag(inner, ['link']);
+            if (!link && isAtom) {
+                const linkAttrMatch = /<link[^>]*\bhref\s*=\s*"([^"]+)"/i.exec(inner);
+                if (linkAttrMatch) link = linkAttrMatch[1];
+            }
+            const pubDateRaw =
+                this.extractTag(inner, ['pubDate', 'updated', 'published', 'dc:date']) || '';
+            const description =
+                this.extractTag(inner, ['content:encoded', 'description', 'summary', 'content']) || '';
+            const guid = this.extractTag(inner, ['guid', 'id']) || link;
 
-            // Basic HTML Entity decoding if needed (axios usually returns raw text)
-            // For now, we trust the source XML structure
+            const ts = pubDateRaw ? new Date(pubDateRaw).getTime() : NaN;
+            const pubDate = Number.isFinite(ts) ? ts : Date.now();
 
             items.push({
-                gid: guid,
-                title: this.cleanText(title),
-                url: link,
+                gid: guid || `${sourceName}_${pubDate}`,
+                title: this.cleanText(title || 'No Title'),
+                url: link || '',
                 author: sourceName,
-                contents: description, // Keep HTML for now, frontend strips it for preview
+                contents: description,
                 feedlabel: 'Global News',
-                date: Math.floor(pubDate / 1000), // Unix timestamp in seconds
+                date: Math.floor(pubDate / 1000),
                 feedname: sourceName,
                 appId: '0'
             });
@@ -83,7 +88,28 @@ export class NewsManager {
         return items;
     }
 
+    // Pulls the text content of the first matching tag, handling CDATA and
+    // namespaced names (escapes the colon for the regex).
+    private extractTag(xml: string, names: string[]): string {
+        for (const raw of names) {
+            const safe = raw.replace(/:/g, '\\:');
+            // Capture either CDATA or plain text, allowing tag attributes.
+            const re = new RegExp(`<${safe}\\b[^>]*>(?:<!\\[CDATA\\[([\\s\\S]*?)\\]\\]>|([\\s\\S]*?))<\\/${safe}>`, 'i');
+            const m = re.exec(xml);
+            if (m) return (m[1] !== undefined ? m[1] : m[2] || '').trim();
+        }
+        return '';
+    }
+
     private cleanText(text: string): string {
-        return text.replace(/<!\[CDATA\[(.*?)\]\]>/g, '$1').trim();
+        // BUG-069: strip stray CDATA wrappers and decode common entities.
+        return text
+            .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1')
+            .replace(/&amp;/g, '&')
+            .replace(/&lt;/g, '<')
+            .replace(/&gt;/g, '>')
+            .replace(/&quot;/g, '"')
+            .replace(/&#39;/g, "'")
+            .trim();
     }
 }

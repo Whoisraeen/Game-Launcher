@@ -1,9 +1,10 @@
-import { exec } from 'child_process';
+import { exec, execFile } from 'child_process';
 import { promisify } from 'util';
 import os from 'os';
 import fs from 'fs';
 
 const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 
 export type CompatMode = 'WIN7' | 'WIN8' | 'WIN10' | 'VISTA' | 'WINXP' | 'NONE';
 
@@ -73,8 +74,10 @@ export class CompatibilityService {
         if (!executablePath || !fs.existsSync(executablePath)) return settings;
 
         try {
-            const { stdout } = await execAsync(
-                `reg query "${REGISTRY_PATH}" /v "${executablePath}" 2>nul`,
+            // BUG-064: pass paths as argv to reg.exe instead of interpolating into a shell string.
+            const { stdout } = await execFileAsync(
+                'reg',
+                ['query', REGISTRY_PATH, '/v', executablePath],
                 { timeout: 8000 }
             );
 
@@ -121,14 +124,17 @@ export class CompatibilityService {
             if (options?.highDpi)              layers.push('HIGHDPIAWARE');
 
             if (layers.length === 0) {
-                await execAsync(
-                    `reg delete "${REGISTRY_PATH}" /v "${executablePath}" /f 2>nul`,
+                // BUG-064
+                await execFileAsync(
+                    'reg',
+                    ['delete', REGISTRY_PATH, '/v', executablePath, '/f'],
                     { timeout: 8000 }
                 );
             } else {
                 const value = layers.join(' ');
-                await execAsync(
-                    `reg add "${REGISTRY_PATH}" /v "${executablePath}" /t REG_SZ /d "${value}" /f`,
+                await execFileAsync(
+                    'reg',
+                    ['add', REGISTRY_PATH, '/v', executablePath, '/t', 'REG_SZ', '/d', value, '/f'],
                     { timeout: 8000 }
                 );
             }

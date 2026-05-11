@@ -382,29 +382,45 @@ export class FriendsManager {
         // This is simplified and might miss some edge cases but good for now
         
         // Find "friends" block start
+        // BUG-057: depth-aware extraction. We find "friends" { ... } block and
+        // only collect "name" entries that live ONE level inside that block
+        // (i.e. siblings of each friend's SteamID key). This prevents picking
+        // up "name" keys from unrelated VDF sections (game names, categories).
         const friendsIndex = content.indexOf('"friends"');
         if (friendsIndex === -1) return [];
-
         const blockStart = content.indexOf('{', friendsIndex);
         if (blockStart === -1) return [];
 
-        // Simple parsing: look for "name" "Value" inside the block
-        // We need to be careful not to read outside the friends block.
-        // A full VDF parser is better but for now let's try to grab names around the friends block area.
-        
-        // Let's use a regex that looks for "name" "X"
-        // We'll limit the search scope to reasonable size after "friends"
-        const searchScope = content.slice(blockStart, blockStart + 50000); // 50KB chunk
-        
-        const nameMatches = searchScope.matchAll(/"name"\s+"(.+?)"/g);
-        for (const match of nameMatches) {
-            // Filter out common non-friend names if any
-            if (match[1] && match[1].length > 1) {
-                friends.push(match[1]);
+        // Find matching closing brace for the friends block by tracking depth.
+        let depth = 0;
+        let blockEnd = -1;
+        for (let i = blockStart; i < content.length; i++) {
+            const ch = content[i];
+            if (ch === '{') depth++;
+            else if (ch === '}') {
+                depth--;
+                if (depth === 0) { blockEnd = i; break; }
+            }
+        }
+        if (blockEnd === -1) return [];
+
+        const block = content.slice(blockStart + 1, blockEnd);
+
+        // Each friend is a child object: "76561198xxxxxxxxx" { "name" "Foo" ... }
+        // Walk by tracking brace depth so we only collect "name" at depth 1.
+        let cursor = 0;
+        depth = 0;
+        const re = /(\{|\}|"name"\s+"((?:[^"\\]|\\.)*)")/g;
+        let m: RegExpExecArray | null;
+        while ((m = re.exec(block)) !== null) {
+            if (m[1] === '{') depth++;
+            else if (m[1] === '}') depth--;
+            else if (m[2] !== undefined && depth === 1) {
+                const name = m[2].trim();
+                if (name.length > 1) friends.push(name);
             }
         }
 
-        // Deduplicate
         return [...new Set(friends)];
     }
 

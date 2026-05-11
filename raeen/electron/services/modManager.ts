@@ -2,10 +2,15 @@ import { getDb } from '../database';
 import { v4 as uuidv4 } from 'uuid';
 import fs from 'fs';
 import path from 'path';
+import crypto from 'crypto';
 
 export interface ModConflict {
     file: string;
     modIds: string[];
+    // BUG-037: distinguish between identical-content overrides (likely safe to
+    // load-order resolve) and divergent-content overrides (need user choice).
+    severity: 'identical' | 'divergent' | 'asset-overlap';
+    detail?: string;
 }
 
 export class UniversalModManager {
@@ -25,53 +30,94 @@ export class UniversalModManager {
     `).all();
   }
 
-  // Check for conflicts between enabled mods for a specific game
-  // Returns list of conflicting relative file paths and the mod IDs involved
+  // BUG-037: deeper conflict detection.
+  //  - Hash file contents so identical drops are flagged as 'identical' (low severity).
+  //  - For loose-asset formats (DDS textures, OGG audio, JSON/XML configs), flag
+  //    name overlaps in known asset directories as 'asset-overlap' even when
+  //    paths differ but the asset id matches.
+  //  - All other path collisions with differing hashes are 'divergent'.
   checkConflicts(gameId: string): ModConflict[] {
       const db = getDb();
-      // Get all enabled mods for this game
       const mods = db.prepare('SELECT id, install_path FROM mods WHERE game_id = ? AND enabled = 1').all(gameId) as { id: string, install_path: string }[];
-      
+
       if (mods.length < 2) return [];
 
-      const fileMap = new Map<string, string[]>(); // filePath -> [modId, modId]
+      type FileEntry = { modId: string; abs: string; size: number };
+      const byPath = new Map<string, FileEntry[]>();         // relPath → entries
+      const byAssetId = new Map<string, FileEntry[]>();      // assetId → entries
+
+      const ASSET_DIRS = /(?:^|\/)(?:textures|sounds|materials|meshes|scripts|configs?)(?:\/|$)/i;
+
+      const hashOf = (abs: string): string | null => {
+          try {
+              const buf = fs.readFileSync(abs);
+              return crypto.createHash('sha1').update(buf).digest('hex');
+          } catch { return null; }
+      };
 
       for (const mod of mods) {
           if (!mod.install_path || !fs.existsSync(mod.install_path)) continue;
-          
-          // Recursive scan of mod directory
+
           const scan = (dir: string, relativeDir: string = '') => {
               const files = fs.readdirSync(dir);
               for (const file of files) {
                   const fullPath = path.join(dir, file);
-                  const relativePath = path.join(relativeDir, file);
-                  const stat = fs.statSync(fullPath);
+                  const relativePath = path.join(relativeDir, file).replace(/\\/g, '/');
+                  let stat: fs.Stats;
+                  try { stat = fs.statSync(fullPath); } catch { continue; }
 
-                  if (stat.isDirectory()) {
-                      scan(fullPath, relativePath);
-                  } else {
-                      // Track file
-                      if (!fileMap.has(relativePath)) {
-                          fileMap.set(relativePath, []);
-                      }
-                      fileMap.get(relativePath)?.push(mod.id);
+                  if (stat.isDirectory()) { scan(fullPath, relativePath); continue; }
+
+                  const entry: FileEntry = { modId: mod.id, abs: fullPath, size: stat.size };
+                  if (!byPath.has(relativePath)) byPath.set(relativePath, []);
+                  byPath.get(relativePath)!.push(entry);
+
+                  // Asset-overlap heuristic: same basename inside an asset dir
+                  // even when full paths differ between mods (common for texture
+                  // packs that organize differently).
+                  if (ASSET_DIRS.test(relativePath)) {
+                      const assetKey = path.basename(relativePath).toLowerCase();
+                      if (!byAssetId.has(assetKey)) byAssetId.set(assetKey, []);
+                      byAssetId.get(assetKey)!.push(entry);
                   }
               }
           };
-          
-          try {
-            scan(mod.install_path);
-          } catch (e) {
-              console.warn(`Failed to scan mod ${mod.id}`, e);
-          }
+
+          try { scan(mod.install_path); }
+          catch (e) { console.warn(`Failed to scan mod ${mod.id}`, e); }
       }
 
-      // Filter for conflicts (files present in > 1 mod)
       const conflicts: ModConflict[] = [];
-      fileMap.forEach((modIds, file) => {
-          if (modIds.length > 1) {
-              conflicts.push({ file, modIds });
+
+      byPath.forEach((entries, file) => {
+          if (entries.length < 2) return;
+          // Quick size-based screen, then content hash to confirm identical.
+          const sizes = new Set(entries.map(e => e.size));
+          if (sizes.size === 1) {
+              const hashes = new Set(entries.map(e => hashOf(e.abs) || `unknown:${e.modId}`));
+              if (hashes.size === 1) {
+                  conflicts.push({ file, modIds: entries.map(e => e.modId), severity: 'identical', detail: 'Identical contents' });
+                  return;
+              }
           }
+          conflicts.push({ file, modIds: entries.map(e => e.modId), severity: 'divergent', detail: 'Different contents — last loaded mod wins' });
+      });
+
+      // Asset-overlap conflicts that didn't already show up as path collisions.
+      const seenPaths = new Set<string>(conflicts.map(c => c.file));
+      byAssetId.forEach((entries, asset) => {
+          // Need entries from at least two distinct mods AND not already accounted for.
+          const distinctMods = new Set(entries.map(e => e.modId));
+          if (distinctMods.size < 2) return;
+          const reps = entries.slice(0, 4).map(e => e.abs);
+          const samplePath = path.basename(reps[0]);
+          if (seenPaths.has(samplePath)) return;
+          conflicts.push({
+              file: `asset:${asset}`,
+              modIds: [...distinctMods],
+              severity: 'asset-overlap',
+              detail: `Multiple mods ship "${asset}" in different folders`,
+          });
       });
 
       return conflicts;

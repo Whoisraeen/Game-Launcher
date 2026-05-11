@@ -76,11 +76,14 @@ export class GamingSessionService {
     const id = `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     const now = Date.now();
 
+    // BUG-058: include break_interval in the column list, and pass `now` for created_at.
+    // Previous code listed 10 columns + 10 placeholders but bound 11 values, so
+    // break_interval ended up in the created_at slot and never made it into the row.
     db.prepare(`
       INSERT INTO gaming_sessions (
         id, title, description, start_time, end_time,
-        game_id, game_name, reminder, reminder_minutes, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        game_id, game_name, reminder, reminder_minutes, break_interval, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       id,
       session.title,

@@ -72,34 +72,37 @@ export class PriceTrackerService {
   /**
    * Check prices for all wishlist games
    */
+  // BUG-047: replace strict serial-with-1s-delay with bounded concurrency.
+  // 100-game wishlists no longer take 100+ seconds. We still rate-limit per
+  // worker to be polite to upstream stores.
   async checkPrices(): Promise<PriceAlert[]> {
     const wishlistGames = this.getAllWishlistGames();
     const alerts: PriceAlert[] = [];
+    const CONCURRENCY = 4;
+    const PER_WORKER_DELAY_MS = 250;
 
-    for (const game of wishlistGames) {
-      try {
-        const priceData = await this.fetchPrice(game.platform, game.platformId);
-
-        if (priceData) {
-          // Update price in database
-          this.updatePrice(game.id, priceData.price, priceData.discount);
-
-          // Check if price alert should be triggered
-          if (game.priceAlertEnabled && game.targetPrice) {
-            if (priceData.price <= game.targetPrice) {
+    let cursor = 0;
+    const next = async () => {
+      while (cursor < wishlistGames.length) {
+        const game = wishlistGames[cursor++];
+        try {
+          const priceData = await this.fetchPrice(game.platform, game.platformId);
+          if (priceData) {
+            this.updatePrice(game.id, priceData.price, priceData.discount);
+            if (game.priceAlertEnabled && game.targetPrice && priceData.price <= game.targetPrice) {
               const alert = await this.triggerPriceAlert(game, priceData.price, priceData.discount);
               alerts.push(alert);
             }
           }
+        } catch (error) {
+          console.error(`Failed to check price for ${game.title}:`, error);
         }
-      } catch (error) {
-        console.error(`Failed to check price for ${game.title}:`, error);
+        await new Promise(resolve => setTimeout(resolve, PER_WORKER_DELAY_MS));
       }
-
-      // Rate limiting
-      await new Promise(resolve => setTimeout(resolve, 1000));
-    }
-
+    };
+    await Promise.all(
+      Array.from({ length: Math.min(CONCURRENCY, wishlistGames.length) }, () => next())
+    );
     return alerts;
   }
 

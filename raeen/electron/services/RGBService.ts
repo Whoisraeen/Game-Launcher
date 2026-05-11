@@ -76,8 +76,16 @@ export class RGBService {
 
     private stopEffect() {
         if (this.effectInterval) {
-            clearInterval(this.effectInterval);
+            // BUG-053: handle both real Timeout objects and our self-rescheduling shim
+            const h: any = this.effectInterval;
+            if (typeof h.close === 'function') h.close();
+            else clearInterval(h);
             this.effectInterval = null;
+        }
+        // Also clear any pending timeout used by the self-rescheduling effects.
+        if ((this as any)._effectTimeout) {
+            clearTimeout((this as any)._effectTimeout);
+            (this as any)._effectTimeout = null;
         }
     }
 
@@ -100,39 +108,47 @@ export class RGBService {
         }
     }
 
+    // BUG-053: setInterval + await applyColor stacks callbacks if applyColor
+    // takes longer than the interval, flooding the OpenRGB server. Use a
+    // self-rescheduling loop so the next tick only fires after the previous
+    // applyColor resolves.
     private startBreathingEffect(speed: number, color: {r: number, g: number, b: number}) {
         let brightness = 0;
         let direction = 1;
-        const intervalMs = 50; 
-        
-        this.effectInterval = setInterval(async () => {
-            brightness += direction * (0.02 * (speed / 50)); // Normalize speed
-            if (brightness >= 1) {
-                brightness = 1;
-                direction = -1;
-            } else if (brightness <= 0.1) {
-                brightness = 0.1;
-                direction = 1;
-            }
-
+        const intervalMs = 50;
+        let cancelled = false;
+        const tick = async () => {
+            if (cancelled) return;
+            brightness += direction * (0.02 * (speed / 50));
+            if (brightness >= 1) { brightness = 1; direction = -1; }
+            else if (brightness <= 0.1) { brightness = 0.1; direction = 1; }
             const r = Math.round(color.r * brightness);
             const g = Math.round(color.g * brightness);
             const b = Math.round(color.b * brightness);
-
-            await this.applyColor(r, g, b);
-        }, intervalMs);
+            try { await this.applyColor(r, g, b); } catch {}
+            if (!cancelled) (this as any)._effectTimeout = setTimeout(tick, intervalMs);
+        };
+        // Cancellation handle compatible with the old `effectInterval` API.
+        this.effectInterval = { unref: () => {}, ref: () => {}, hasRef: () => true,
+            close: () => { cancelled = true; clearTimeout((this as any)._effectTimeout); } } as any;
+        tick();
     }
 
     private startColorCycle(speed: number) {
         let hue = 0;
         const intervalMs = 50;
         const step = Math.max(1, Math.round(speed / 10));
-
-        this.effectInterval = setInterval(async () => {
+        let cancelled = false;
+        const tick = async () => {
+            if (cancelled) return;
             hue = (hue + step) % 360;
             const { r, g, b } = this.hsvToRgb(hue / 360, 1, 1);
-            await this.applyColor(r, g, b);
-        }, intervalMs);
+            try { await this.applyColor(r, g, b); } catch {}
+            if (!cancelled) (this as any)._effectTimeout = setTimeout(tick, intervalMs);
+        };
+        this.effectInterval = { unref: () => {}, ref: () => {}, hasRef: () => true,
+            close: () => { cancelled = true; clearTimeout((this as any)._effectTimeout); } } as any;
+        tick();
     }
 
     private startRainbowWave(speed: number) {

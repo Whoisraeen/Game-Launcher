@@ -65,6 +65,15 @@ import MonitorCalibration from './components/MonitorCalibration';
 import ParticleBackground from './components/ParticleBackground';
 
 const RECENT_KEY = 'raeen.recentPages.v1';
+const FALLBACK_BG = 'https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/1716740/library_hero.jpg';
+
+// BUG-062: rewrite legacy file:// → safe-file:// (custom Electron protocol).
+// BUG-020: also lets us swap to fallback when the source is missing/broken.
+function resolveBackgroundUrl(src?: string | null): string {
+  if (!src) return FALLBACK_BG;
+  if (src.startsWith('file://')) return 'safe-file:///' + src.replace(/^file:\/+/, '');
+  return src;
+}
 const SECTION_HOTKEYS: Record<string, string> = {
   '1': 'Library',
   '2': 'Backlog',
@@ -242,16 +251,28 @@ function App() {
           {/* Background */}
           <div className="absolute inset-0 z-0">
             <img
-              src={settings?.appearance.customBackground || "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/1716740/library_hero.jpg"}
+              src={resolveBackgroundUrl(settings?.appearance.customBackground)}
               alt="Background"
+              loading="lazy"
+              decoding="async"
               className="absolute inset-0 w-full h-full object-cover scale-110 transition-all duration-1000"
-              style={{ 
+              style={{
                   filter: `blur(${settings?.appearance.blurLevel === 'low' ? '8px' : settings?.appearance.blurLevel === 'high' ? '64px' : '32px'})`,
                   opacity: 0.2
               }}
+              onLoad={(e) => {
+                // BUG-020: guard against absurdly large user backgrounds (OOM on low-RAM systems).
+                const img = e.currentTarget;
+                const pixels = img.naturalWidth * img.naturalHeight;
+                if (pixels > 50_000_000) { // > ~50 MP
+                  console.warn(`Background image ${pixels} px is too large; falling back.`);
+                  img.src = FALLBACK_BG;
+                }
+              }}
+              onError={(e) => { (e.currentTarget as HTMLImageElement).src = FALLBACK_BG; }}
             />
-            <div 
-                className="absolute inset-0 bg-gradient-to-t from-[var(--bg-primary)] via-[var(--bg-primary)]/80 to-[var(--bg-primary)]/40" 
+            <div
+                className="absolute inset-0 bg-gradient-to-t from-[var(--bg-primary)] via-[var(--bg-primary)]/80 to-[var(--bg-primary)]/40"
                 style={{ opacity: settings?.appearance.overlayOpacity ?? 0.6 }}
             />
             {settings?.appearance?.enableParticles !== false && <ParticleBackground />}
