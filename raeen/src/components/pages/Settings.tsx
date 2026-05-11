@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Monitor, User, Shield, Keyboard, Bell, Volume2, Database, RefreshCw, FolderOpen, Link, Zap, Palette, Upload, Image as ImageIcon, HeartPulse, Crosshair, MonitorSmartphone, HardDrive, Target } from 'lucide-react';
 import { useSettingsStore, UserSettings } from '../../stores/settingsStore';
 import { useGameStore } from '../../stores/gameStore';
+import { resolveBackgroundUrl } from '../../utils/backgroundAssetUrl';
 
 const Settings: React.FC = () => {
     const { settings, loadSettings, updateSetting, isLoading } = useSettingsStore();
@@ -50,12 +51,14 @@ const Settings: React.FC = () => {
 
     const handleUploadBackground = async () => {
         try {
-            const path = await window.ipcRenderer.invoke('settings:uploadBackground');
-            if (path) {
-                updateSetting('appearance', { customBackground: path });
+            const bgPath = await window.ipcRenderer.invoke('settings:uploadBackground');
+            if (bgPath) {
+                await updateSetting('appearance', { customBackground: bgPath });
             }
-        } catch (error) {
+        } catch (error: unknown) {
             console.error('Failed to upload background', error);
+            const msg = error instanceof Error ? error.message : String(error);
+            alert(msg || 'Could not set background image.');
         }
     };
 
@@ -271,7 +274,8 @@ const Settings: React.FC = () => {
                                     {settings.appearance.customBackground ? (
                                         <div className="relative w-full aspect-video rounded-lg overflow-hidden group">
                                             <img 
-                                                src={settings.appearance.customBackground} 
+                                                key={resolveBackgroundUrl(settings.appearance.customBackground)}
+                                                src={resolveBackgroundUrl(settings.appearance.customBackground)} 
                                                 alt="Custom Background" 
                                                 className="w-full h-full object-cover"
                                             />

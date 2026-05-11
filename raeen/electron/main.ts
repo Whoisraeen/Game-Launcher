@@ -189,11 +189,21 @@ app.whenReady().then(async () => {
   ].map(p => path.resolve(p));
   protocol.handle('safe-file', async (req) => {
     try {
-      const url = new URL(req.url);
-      // safe-file:///C:/Users/.../file.png → /C:/Users/.../file.png
-      const decoded = decodeURIComponent(url.pathname.replace(/^\//, ''));
-      const resolved = path.resolve(decoded);
-      const allowed = safeRoots.some(root => resolved.toLowerCase().startsWith(root.toLowerCase() + path.sep) || resolved.toLowerCase() === root.toLowerCase());
+      let resolved: string;
+      try {
+        const asFileUrl = req.url.replace(/^safe-file:/i, 'file:');
+        resolved = path.resolve(fileURLToPath(new URL(asFileUrl)));
+      } catch {
+        const url = new URL(req.url);
+        const decoded = decodeURIComponent(url.pathname.replace(/^\//, ''));
+        resolved = path.resolve(decoded);
+      }
+      const allowed = safeRoots.some((root) => {
+        const rootResolved = path.resolve(root);
+        const rl = resolved.toLowerCase();
+        const rootl = rootResolved.toLowerCase();
+        return rl.startsWith(rootl + path.sep) || rl === rootl;
+      });
       if (!allowed) return new Response('forbidden', { status: 403 });
       if (!fs.existsSync(resolved)) return new Response('not found', { status: 404 });
       return net.fetch(pathToFileURL(resolved).toString());
