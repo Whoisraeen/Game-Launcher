@@ -53,6 +53,7 @@ const RECENT_KEY = 'raeen.recentPages.v1';
 
 import { useSettingsStore } from '../stores/settingsStore';
 import { useGameStore } from '../stores/gameStore';
+import { useFriendStore } from '../stores/friendStore';
 import DecisionHelperModal from './DecisionHelperModal';
 
 interface SidebarProps {
@@ -72,6 +73,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage, onNavigate }) => {
         launchGame, collections, loadCollections, createCollection, deleteCollection,
         addGameToCollection, selectedCollectionId, setSelectedCollectionId,
     } = useGameStore();
+    const { friends, loadFriends } = useFriendStore();
     const [showDecisionHelper, setShowDecisionHelper] = useState(false);
     const [search, setSearch] = useState('');
     const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
@@ -79,6 +81,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage, onNavigate }) => {
 
     useEffect(() => {
         loadCollections();
+        loadFriends();
         const load = () => {
             try {
                 const raw = localStorage.getItem(RECENT_KEY);
@@ -90,13 +93,17 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage, onNavigate }) => {
         window.addEventListener('raeen:recent-updated', onUpdate);
         const dh = () => setShowDecisionHelper(true);
         window.addEventListener('open-decision-helper', dh);
+        const removeFriendsUpdate = window.ipcRenderer.on('friends:update', () => {
+            loadFriends();
+        });
         return () => {
             window.removeEventListener('raeen:recent-updated', onUpdate);
             window.removeEventListener('open-decision-helper', dh);
+            removeFriendsUpdate();
         };
-    }, []);
+    }, [loadCollections, loadFriends]);
 
-    const sections: NavSection[] = useMemo(() => ([
+    const baseSections: NavSection[] = useMemo(() => ([
         {
             id: 'library', title: 'Library', items: [
                 { key: 'Wishlist',     label: 'Wishlist',     icon: <Heart size={18} /> },
@@ -110,7 +117,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage, onNavigate }) => {
         },
         {
             id: 'social', title: 'Social', items: [
-                { key: 'Friends',      label: 'Friends',       icon: <Users size={18} />, badge: '3' },
+                { key: 'Friends',      label: 'Friends',       icon: <Users size={18} /> },
                 { key: 'SocialHub',    label: 'Social Hub',    icon: <MessagesSquare size={18} /> },
                 { key: 'BuddyFinder',  label: 'Buddy Finder',  icon: <UserSearch size={18} /> },
                 { key: 'ClanManager',  label: 'Clans',          icon: <Shield size={18} /> },
@@ -173,6 +180,24 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage, onNavigate }) => {
             ],
         },
     ]), []);
+
+    const friendsOnlineCount = useMemo(
+        () => friends.filter(f => f.status !== 'offline').length,
+        [friends]
+    );
+
+    const sections: NavSection[] = useMemo(
+        () =>
+            baseSections.map((s) => ({
+                ...s,
+                items: s.items.map((i) =>
+                    i.key === 'Friends' && friendsOnlineCount > 0
+                        ? { ...i, badge: String(friendsOnlineCount) }
+                        : i
+                ),
+            })),
+        [baseSections, friendsOnlineCount]
+    );
 
     const filteredSections = useMemo(() => {
         const q = search.trim().toLowerCase();
