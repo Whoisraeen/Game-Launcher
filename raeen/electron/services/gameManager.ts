@@ -769,6 +769,91 @@ export class GameManager extends EventEmitter {
         }
     }
 
+    /** Parsed calendar releases/DLC within [month] from library metadata + DLC tracker. */
+    getCalendarReleasesForMonth(year: number, month: number): Array<{
+        id: string;
+        date: number;
+        title: string;
+        type: 'release';
+        description?: string;
+        gameName?: string;
+    }> {
+        const start = new Date(year, month, 1).getTime();
+        const end = new Date(year, month + 1, 0, 23, 59, 59, 999).getTime();
+        try {
+            const db = getDb();
+            const out: Array<{
+                id: string;
+                date: number;
+                title: string;
+                type: 'release';
+                description?: string;
+                gameName?: string;
+            }> = [];
+
+            const gameRows = db
+                .prepare(
+                    `SELECT id, title, release_date, platform FROM games
+             WHERE release_date IS NOT NULL AND trim(release_date) != ''`
+                )
+                .all() as { id: string; title: string; release_date: string; platform: string }[];
+
+            for (const g of gameRows) {
+                const ms = GameManager.parseReleaseDateToMs(g.release_date);
+                if (ms == null || ms < start || ms > end) continue;
+                out.push({
+                    id: `cal-game-${g.id}-${ms}`,
+                    date: ms,
+                    title: g.title,
+                    type: 'release',
+                    description: `Library • ${g.platform}`,
+                    gameName: g.title,
+                });
+            }
+
+            const dlcRows = db
+                .prepare(
+                    `SELECT d.id, d.name, d.releaseDate, g.title AS gameTitle
+           FROM dlcs d
+           LEFT JOIN games g ON g.id = d.gameId
+           WHERE d.releaseDate IS NOT NULL AND d.releaseDate >= ? AND d.releaseDate <= ?`
+                )
+                .all(start, end) as { id: string; name: string; releaseDate: number; gameTitle: string | null }[];
+
+            for (const d of dlcRows) {
+                out.push({
+                    id: `cal-dlc-${d.id}`,
+                    date: d.releaseDate,
+                    title: d.name,
+                    type: 'release',
+                    description: d.gameTitle ? `DLC • ${d.gameTitle}` : 'DLC',
+                    gameName: d.gameTitle || undefined,
+                });
+            }
+
+            return out.sort((a, b) => a.date - b.date);
+        } catch (e) {
+            console.warn('getCalendarReleasesForMonth failed:', e);
+            return [];
+        }
+    }
+
+    static parseReleaseDateToMs(raw: string | null | undefined): number | null {
+        const s = String(raw ?? '').trim();
+        if (!s) return null;
+        const asNum = Number(s);
+        if (!Number.isNaN(asNum) && asNum > 1e12) return asNum;
+        if (!Number.isNaN(asNum) && asNum > 1e9 && asNum < 1e12) return asNum * 1000;
+        let t = Date.parse(s);
+        if (!Number.isNaN(t)) return t;
+        const m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+        if (m) {
+            t = Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+            return Number.isNaN(t) ? null : t;
+        }
+        return null;
+    }
+
     toggleFavorite(gameId: string, isFavorite: boolean) {
         const db = getDb();
         db.prepare('UPDATE games SET is_favorite = ? WHERE id = ?').run(isFavorite ? 1 : 0, gameId);
@@ -1016,6 +1101,62 @@ export class GameManager extends EventEmitter {
         const db = getDb();
         db.prepare('DELETE FROM game_reviews WHERE id = ?').run(reviewId);
         return true;
+    }
+
+    /** Merge OAuth/API catalog (owned titles not necessarily installed). Safe with existing installed rows. */
+    async mergeCatalogEntries(
+        entries: Array<{ title: string; platform: string; platformId: string; coverUrl?: string }>
+    ): Promise<{ upserted: number }> {
+        let upserted = 0;
+        for (const e of entries) {
+            try {
+                const existing = (await this.dbClient.get(
+                    'SELECT id FROM games WHERE platform = ? AND platform_id = ?',
+                    e.platform,
+                    e.platformId
+                )) as { id: string } | undefined;
+
+                if (existing) {
+                    await this.dbClient.run(
+                        'UPDATE games SET title = ?, cover_url = COALESCE(?, cover_url) WHERE id = ?',
+                        e.title,
+                        e.coverUrl || null,
+                        existing.id
+                    );
+                } else {
+                    const id = uuidv4();
+                    await this.dbClient.run(
+                        `
+                        INSERT INTO games (
+                            id, title, platform, platform_id, install_path, executable, added_at, is_installed,
+                            icon_url, cover_url, background_url, logo_url, genre, tags, achievements_total, achievements_unlocked, video_url
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    `,
+                        id,
+                        e.title,
+                        e.platform,
+                        e.platformId,
+                        '',
+                        '',
+                        Date.now(),
+                        0,
+                        null,
+                        e.coverUrl || null,
+                        null,
+                        null,
+                        null,
+                        '[]',
+                        0,
+                        0,
+                        null
+                    );
+                }
+                upserted++;
+            } catch (err) {
+                console.error('[mergeCatalogEntries]', e.title, err);
+            }
+        }
+        return { upserted };
     }
 
     private ensureReviewsTable(db: any) {

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Trophy, Users, Swords, MessageCircle, Hash, Twitter, Play, Activity, Gamepad2, Clock } from 'lucide-react';
 import BuddyFinder from './BuddyFinder';
 
@@ -84,6 +84,18 @@ const ActivityFeedSection: React.FC = () => {
         };
     }, []);
 
+    const statCounts = useMemo(() => {
+        const playingIds = new Set(events.filter(e => e.type === 'playing').map(e => e.friendId));
+        const onlineOrPlaying = new Set(
+            events.filter(e => e.type === 'playing' || e.type === 'online').map(e => e.friendId)
+        );
+        return {
+            friendsOnline: onlineOrPlaying.size,
+            inGame: playingIds.size,
+            achievements: events.filter(e => e.type === 'achievement').length,
+        };
+    }, [events]);
+
     const getEventIcon = (type: string) => {
         switch (type) {
             case 'playing': return <Gamepad2 size={16} className="text-purple-400" />;
@@ -134,7 +146,7 @@ const ActivityFeedSection: React.FC = () => {
                         <Users size={20} className="text-green-400" />
                     </div>
                     <div>
-                        <p className="text-2xl font-black text-white">{events.filter(e => e.type === 'online' || e.type === 'playing').length}</p>
+                        <p className="text-2xl font-black text-white">{statCounts.friendsOnline}</p>
                         <p className="text-xs text-gray-400 font-medium">Friends Online</p>
                     </div>
                 </div>
@@ -143,7 +155,7 @@ const ActivityFeedSection: React.FC = () => {
                         <Gamepad2 size={20} className="text-purple-400" />
                     </div>
                     <div>
-                        <p className="text-2xl font-black text-white">{events.filter(e => e.type === 'playing').length}</p>
+                        <p className="text-2xl font-black text-white">{statCounts.inGame}</p>
                         <p className="text-xs text-gray-400 font-medium">In Game</p>
                     </div>
                 </div>
@@ -152,7 +164,7 @@ const ActivityFeedSection: React.FC = () => {
                         <Trophy size={20} className="text-yellow-400" />
                     </div>
                     <div>
-                        <p className="text-2xl font-black text-white">{events.filter(e => e.type === 'achievement').length}</p>
+                        <p className="text-2xl font-black text-white">{statCounts.achievements}</p>
                         <p className="text-xs text-gray-400 font-medium">Recent Achievements</p>
                     </div>
                 </div>
@@ -161,8 +173,11 @@ const ActivityFeedSection: React.FC = () => {
             {/* Activity Feed */}
             <div className="glass-panel p-6 rounded-2xl">
                 <h2 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
-                    <Activity size={20} className="text-blue-400" /> Live Activity Feed
+                    <Activity size={20} className="text-blue-400" /> Activity Feed
                 </h2>
+                <p className="text-xs text-gray-500 mb-4">
+                    Built from synced friends, launcher chat, and achievements tracked in your library — no demo personas.
+                </p>
 
                 {events.length === 0 ? (
                     <div className="py-12 text-center text-gray-500">

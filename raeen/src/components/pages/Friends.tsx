@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useEffect, useRef } from 'react';
+import React, { useMemo, useState, useEffect, useRef, useCallback } from 'react';
 import { Search, MessageSquare, RefreshCw, Trash2, Download, Cloud, Activity, Send, UserPlus } from 'lucide-react';
 import { useFriendStore } from '../../stores/friendStore';
 import { Friend } from '../../types';
@@ -14,6 +14,16 @@ const Friends: React.FC = () => {
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const [selectedFriendId, setSelectedFriendId] = useState<string | null>(null);
     const selectedFriendIdRef = useRef<string | null>(null);
+    const [activityPreview, setActivityPreview] = useState<any[]>([]);
+
+    const loadActivityPreview = useCallback(async () => {
+        try {
+            const ev = await window.ipcRenderer.invoke('friends:getActivity');
+            setActivityPreview(Array.isArray(ev) ? ev.slice(0, 14) : []);
+        } catch {
+            setActivityPreview([]);
+        }
+    }, []);
 
     useEffect(() => {
         selectedFriendIdRef.current = selectedFriendId;
@@ -36,13 +46,16 @@ const Friends: React.FC = () => {
 
         const removeUpdateListener = window.ipcRenderer.on('friends:update', () => {
             loadFriends();
+            loadActivityPreview();
         });
+
+        loadActivityPreview();
 
         return () => {
             removeMsgListener();
             removeUpdateListener();
         };
-    }, [loadFriends]);
+    }, [loadFriends, loadActivityPreview]);
 
     const filteredFriends = useMemo<Friend[]>(() => {
         if (!filter) return friends;
@@ -152,22 +165,27 @@ const Friends: React.FC = () => {
                 <div className="flex-1 overflow-y-auto custom-scrollbar">
                     {/* Activity Feed Section */}
                     <div className="px-4 py-2 text-xs font-bold text-gray-500 uppercase tracking-wider flex items-center gap-2">
-                        <Activity size={12} /> Activity Feed
+                        <Activity size={12} /> Recent activity
                     </div>
-                    <div className="px-4 pb-4 space-y-3">
-                        {onlineFriends.filter(f => f.status === 'playing').map(friend => (
-                            <div key={`feed-${friend.id}`} className="bg-white/5 rounded-lg p-2 text-xs border border-white/5">
-                                <span className="font-bold text-white">{friend.username}</span>
-                                <span className="text-gray-400"> started playing </span>
-                                <span className="text-purple-400 font-bold">{friend.activity}</span>
-                            </div>
-                        ))}
-                        {onlineFriends.filter(f => f.status === 'online').slice(0, 3).map(friend => (
-                            <div key={`feed-online-${friend.id}`} className="bg-white/5 rounded-lg p-2 text-xs border border-white/5">
-                                <span className="font-bold text-white">{friend.username}</span>
-                                <span className="text-gray-400"> is now online</span>
-                            </div>
-                        ))}
+                    <div className="px-4 pb-4 space-y-2">
+                        {activityPreview.length === 0 ? (
+                            <p className="text-xs text-gray-600 px-1">
+                                Sync Steam presence (cloud icon) or chat — playing and online states come from your linked accounts, not simulated feeds.
+                            </p>
+                        ) : (
+                            activityPreview.map((ev: any) => (
+                                <div key={ev.id} className="bg-white/5 rounded-lg p-2 text-xs border border-white/5">
+                                    <span className="font-bold text-white">{ev.friendName}</span>
+                                    <span className="text-gray-400">
+                                        {ev.type === 'playing' && ev.detail ? <> playing <span className="text-purple-400 font-bold">{ev.detail}</span></> : null}
+                                        {ev.type === 'online' && <> came online</>}
+                                        {ev.type === 'achievement' && <> — {ev.detail}</>}
+                                        {ev.type === 'message' && <> messaged: "{ev.detail}"</>}
+                                        {!['playing', 'online', 'achievement', 'message'].includes(ev.type) && <> — {ev.detail || ev.type}</>}
+                                    </span>
+                                </div>
+                            ))
+                        )}
                     </div>
 
                     <div className="px-4 py-2 text-xs font-bold text-gray-500 uppercase tracking-wider">Online — {onlineFriends.length}</div>

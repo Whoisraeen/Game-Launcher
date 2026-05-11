@@ -488,6 +488,22 @@ const migrations: Migration[] = [
                 CREATE INDEX IF NOT EXISTS idx_clan_messages_timestamp ON clan_messages(timestamp);
             `);
         }
+    },
+    {
+        version: 13,
+        name: 'platform_oauth_tokens',
+        up: (db) => {
+            db.exec(`
+                CREATE TABLE IF NOT EXISTS platform_oauth_tokens (
+                    provider TEXT PRIMARY KEY,
+                    access_token TEXT NOT NULL,
+                    refresh_token TEXT,
+                    expires_at INTEGER NOT NULL,
+                    meta_json TEXT DEFAULT '{}',
+                    updated_at INTEGER DEFAULT (strftime('%s', 'now') * 1000)
+                )
+            `);
+        }
     }
 ];
 

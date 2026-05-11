@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { supabase } from '../../lib/supabase';
-import { User, Search, UserPlus, MessageCircle, Gamepad2, Filter, Clock, Trophy, X, ChevronDown, Check } from 'lucide-react';
+import { User, Search, UserPlus, MessageCircle, Gamepad2, Filter, Clock, Trophy, X, Check } from 'lucide-react';
+import { useGameStore } from '../../stores/gameStore';
 
 type Profile = {
     id: string;
@@ -17,6 +18,30 @@ type Profile = {
 const SKILL_LEVELS = ['beginner', 'intermediate', 'advanced', 'pro'] as const;
 const SCHEDULE_OPTIONS = ['Morning', 'Afternoon', 'Evening', 'Night', 'Weekends'] as const;
 
+function mapProfileRow(p: any): Profile {
+    let games: string[] | undefined;
+    if (Array.isArray(p.games)) games = p.games.filter(Boolean).map(String);
+    else if (p.games && typeof p.games === 'string') {
+        try {
+            const j = JSON.parse(p.games);
+            if (Array.isArray(j)) games = j.map(String);
+        } catch {
+            games = undefined;
+        }
+    }
+    return {
+        id: p.id,
+        username: p.username,
+        avatar_url: p.avatar_url,
+        status: p.status || 'offline',
+        current_game: p.current_game,
+        last_seen: p.last_seen,
+        games,
+        skill_level: p.skill_level || undefined,
+        availability: Array.isArray(p.availability) ? p.availability.map(String) : undefined,
+    };
+}
+
 const BuddyFinder: React.FC = () => {
     const [session, setSession] = useState<any>(null);
     const [myProfile, setMyProfile] = useState<Profile | null>(null);
@@ -32,16 +57,29 @@ const BuddyFinder: React.FC = () => {
     const [filterSkill, setFilterSkill] = useState<string>('');
     const [filterSchedule, setFilterSchedule] = useState<Set<string>>(new Set());
     const [sentRequests, setSentRequests] = useState<Set<string>>(new Set());
+    const [libraryPicks, setLibraryPicks] = useState<string[]>([]);
 
-    // Derived game list from friends for the filter dropdown
+    const { games: launcherGames, loadGames } = useGameStore();
     const allGames = useMemo(() => {
         const games = new Set<string>();
         friends.forEach(f => {
             if (f.current_game) games.add(f.current_game);
             f.games?.forEach(g => games.add(g));
         });
+        launcherGames.forEach(g => {
+            if (g.title) games.add(g.title);
+        });
         return Array.from(games).sort();
-    }, [friends]);
+    }, [friends, launcherGames]);
+
+    useEffect(() => {
+        loadGames();
+    }, [loadGames]);
+
+    useEffect(() => {
+        if (myProfile?.games?.length) setLibraryPicks([...myProfile.games]);
+        else setLibraryPicks([]);
+    }, [myProfile?.id]);
 
     useEffect(() => {
         supabase.auth.getSession().then(({ data: { session } }) => {
@@ -64,27 +102,27 @@ const BuddyFinder: React.FC = () => {
         const channel = supabase
             .channel('buddy_finder')
             .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'profiles' }, (payload) => {
-                setFriends(prev => prev.map(f => f.id === payload.new.id ? { ...f, ...payload.new } : f));
+                setFriends(prev => prev.map(f => (f.id === payload.new.id ? mapProfileRow(payload.new) : f)));
             })
             .subscribe();
-        return () => { supabase.removeChannel(channel); };
-    }, [session, friends]);
+        return () => {
+            supabase.removeChannel(channel);
+        };
+    }, [session]);
 
     const fetchData = async (userId: string) => {
         setLoading(true);
         const { data: profile } = await supabase.from('profiles').select('*').eq('id', userId).single();
-        if (profile) setMyProfile(profile);
+        if (profile) setMyProfile(mapProfileRow(profile));
 
-        const { data: allProfiles } = await supabase.from('profiles').select('*').neq('id', userId).limit(20);
-        if (allProfiles) {
-            const enriched: Profile[] = allProfiles.map(p => ({
-                ...p,
-                games: p.games || ['Valorant', 'CS2', 'Apex Legends'].slice(0, Math.floor(Math.random() * 3) + 1),
-                skill_level: p.skill_level || SKILL_LEVELS[Math.floor(Math.random() * 4)],
-                availability: p.availability || ['Evening', 'Night'].slice(0, Math.floor(Math.random() * 2) + 1),
-            }));
-            setFriends(enriched);
-        }
+        const { data: allProfiles } = await supabase
+            .from('profiles')
+            .select('*')
+            .neq('id', userId)
+            .order('username', { ascending: true })
+            .limit(80);
+
+        if (allProfiles) setFriends(allProfiles.map(mapProfileRow));
         setLoading(false);
     };
 
@@ -98,8 +136,8 @@ const BuddyFinder: React.FC = () => {
         e.preventDefault();
         if (!searchQuery.trim()) return;
         setSearching(true);
-        const { data } = await supabase.from('profiles').select('*').ilike('username', `%${searchQuery}%`).neq('id', session?.user.id).limit(5);
-        if (data) setSearchResults(data);
+        const { data } = await supabase.from('profiles').select('*').ilike('username', `%${searchQuery}%`).neq('id', session?.user.id).limit(12);
+        if (data) setSearchResults(data.map(mapProfileRow));
         setSearching(false);
     };
 
@@ -131,6 +169,18 @@ const BuddyFinder: React.FC = () => {
             return true;
         });
     }, [friends, filterGame, filterSkill, filterSchedule]);
+
+    const toggleLibraryPick = (title: string) => {
+        setLibraryPicks(prev =>
+            prev.includes(title) ? prev.filter(t => t !== title) : [...prev, title].slice(0, 40)
+        );
+    };
+
+    const saveLibraryPicksToProfile = async () => {
+        if (!session?.user?.id || !myProfile) return;
+        const { error } = await supabase.from('profiles').update({ games: libraryPicks }).eq('id', session.user.id);
+        if (!error) setMyProfile({ ...myProfile, games: [...libraryPicks] });
+    };
 
     const getStatusColor = (status: string) => {
         switch (status) {
@@ -286,6 +336,42 @@ const BuddyFinder: React.FC = () => {
                         </div>
                     </div>
                 )}
+
+                <div className="mt-4 p-4 bg-black/25 rounded-xl border border-white/5 space-y-3">
+                    <div className="flex items-center justify-between gap-2">
+                        <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">Games from your launcher</span>
+                        <button
+                            type="button"
+                            onClick={saveLibraryPicksToProfile}
+                            className="text-xs font-bold text-blue-400 hover:text-blue-300 px-2 py-1 rounded-lg bg-blue-500/10 border border-blue-500/20"
+                        >
+                            Save to profile ({libraryPicks.length})
+                        </button>
+                    </div>
+                    <p className="text-[11px] text-gray-500 leading-snug">
+                        Tap titles you want on your Supabase profile so filters and Buddy Finder stay accurate — no random filler games.
+                    </p>
+                    <div className="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto custom-scrollbar">
+                        {launcherGames.length === 0 ? (
+                            <p className="text-[11px] text-gray-600">No launcher games loaded yet — open Library to sync.</p>
+                        ) : (
+                            launcherGames.slice(0, 48).map(g => (
+                            <button
+                                key={g.id}
+                                type="button"
+                                onClick={() => toggleLibraryPick(g.title)}
+                                className={`text-[10px] px-2 py-1 rounded-lg border transition ${
+                                    libraryPicks.includes(g.title)
+                                        ? 'bg-blue-600/30 border-blue-500/50 text-white'
+                                        : 'bg-white/5 border-white/10 text-gray-400 hover:text-white'
+                                }`}
+                            >
+                                {g.title}
+                            </button>
+                        ))
+                        )}
+                    </div>
+                </div>
             </div>
 
             {/* Content */}
@@ -396,7 +482,7 @@ const UserCard = ({ user, isFriend, onMatch, matched }: { user: Profile; isFrien
                     <button
                         onClick={() => onMatch(user.id)}
                         className="p-2 bg-blue-600/20 text-blue-400 rounded-lg hover:bg-blue-600 hover:text-white transition-colors"
-                        title="Add Friend"
+                        title="Send ping / friend intent"
                     >
                         <UserPlus size={16} />
                     </button>
@@ -407,13 +493,11 @@ const UserCard = ({ user, isFriend, onMatch, matched }: { user: Profile; isFrien
                     </span>
                 )}
                 <button
-                    onClick={() => onMatch(user.id)}
-                    className="p-2 bg-green-600/20 text-green-400 rounded-lg hover:bg-green-600 hover:text-white transition-colors"
-                    title="Match — send friend request"
+                    type="button"
+                    className="p-2 bg-white/5 text-gray-500 rounded-lg cursor-not-allowed"
+                    title="Messaging hooks up soon — use Friends chat for now"
+                    disabled
                 >
-                    <Gamepad2 size={16} />
-                </button>
-                <button className="p-2 bg-white/5 text-gray-400 rounded-lg hover:bg-white/10 hover:text-white transition-colors" title="Message">
                     <MessageCircle size={16} />
                 </button>
             </div>

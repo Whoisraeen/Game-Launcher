@@ -16,6 +16,21 @@ const Settings: React.FC = () => {
     const [activeSection, setActiveSection] = useState('General');
     const [isScanning, setIsScanning] = useState(false);
     const [emulators, setEmulators] = useState<any[]>([]);
+    const [oauthPlatformStatus, setOauthPlatformStatus] = useState<{
+        microsoft: boolean;
+        epic: boolean;
+        microsoftClientConfigured: boolean;
+        epicClientConfigured: boolean;
+    } | null>(null);
+
+    const refreshOauthPlatformStatus = async () => {
+        try {
+            const s = await window.ipcRenderer.invoke('oauth:platformStatus');
+            setOauthPlatformStatus(s);
+        } catch {
+            setOauthPlatformStatus(null);
+        }
+    };
 
     useEffect(() => {
         loadSettings();
@@ -24,6 +39,9 @@ const Settings: React.FC = () => {
     useEffect(() => {
         if (activeSection === 'Emulation') {
             loadEmulators();
+        }
+        if (activeSection === 'Integrations') {
+            refreshOauthPlatformStatus();
         }
     }, [activeSection]);
 
@@ -641,19 +659,85 @@ const Settings: React.FC = () => {
                                         </div>
                                     </div>
 
-                                    {/* Epic Games */}
-                                    <PlatformConnection 
-                                        name="Epic Games"
-                                        icon={<Database size={20} />}
-                                        color="text-white"
-                                        bgColor="bg-white/10"
-                                        connectedId={settings.integrations.epicId}
-                                        onConnect={() => {
-                                            const id = prompt("Enter Epic Account ID:");
-                                            if (id) handleSelect('integrations', 'epicId', id);
-                                        }}
-                                        onDisconnect={() => handleSelect('integrations', 'epicId', '')}
-                                    />
+                                    {/* Epic Games — OAuth */}
+                                    <div className="py-4 border-b border-white/5 space-y-3">
+                                        <div className="flex items-start gap-3">
+                                            <div className="p-2 rounded-lg bg-white/10 text-white shrink-0">
+                                                <Database size={20} />
+                                            </div>
+                                            <div className="flex-1 min-w-0">
+                                                <span className="text-sm text-gray-300 font-medium">Epic Games</span>
+                                                <p className="text-xs text-gray-500 mt-1 leading-relaxed">
+                                                    OAuth sign-in merges your Epic-owned titles into the library. In the Epic Developer Portal,
+                                                    add redirect URI{' '}
+                                                    <code className="text-gray-400 whitespace-nowrap">http://127.0.0.1:18749/callback</code>
+                                                    {' '}(or set <code className="text-gray-400">OAUTH_LOOPBACK_PORT</code> and match it).
+                                                </p>
+                                                {oauthPlatformStatus && !oauthPlatformStatus.epicClientConfigured && (
+                                                    <p className="text-xs text-amber-400/90 mt-2">
+                                                        Set <code className="text-amber-200/80">EPIC_OAUTH_CLIENT_ID</code> in{' '}
+                                                        <code className="text-amber-200/80">raeen/.env</code> and restart the launcher.
+                                                    </p>
+                                                )}
+                                                <span
+                                                    className={`text-xs mt-2 block ${
+                                                        oauthPlatformStatus?.epic || settings.integrations.epicId
+                                                            ? 'text-green-400'
+                                                            : 'text-gray-500'
+                                                    }`}
+                                                >
+                                                    {oauthPlatformStatus?.epic || settings.integrations.epicId
+                                                        ? `Signed in${settings.integrations.epicId ? ` — account ${settings.integrations.epicId}` : ''}`
+                                                        : 'Not signed in'}
+                                                </span>
+                                                <div className="flex flex-wrap gap-2 mt-3">
+                                                    <button
+                                                        type="button"
+                                                        onClick={async () => {
+                                                            const r = await window.ipcRenderer.invoke('oauth:epic:login');
+                                                            await refreshOauthPlatformStatus();
+                                                            await loadSettings();
+                                                            if (r?.ok) alert('Epic connected.');
+                                                            else alert(r?.error || 'Epic sign-in failed or was cancelled.');
+                                                        }}
+                                                        className="px-3 py-1.5 rounded-lg text-xs font-medium bg-[#313131] text-white hover:bg-[#3d3d3d] border border-white/10"
+                                                    >
+                                                        Sign in with Epic
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        disabled={!oauthPlatformStatus?.epic}
+                                                        onClick={async () => {
+                                                            const r = await window.ipcRenderer.invoke('oauth:epic:syncLibrary');
+                                                            await loadGames();
+                                                            if (r?.ok)
+                                                                alert(`Synced ${r.upserted ?? 0} titles from Epic.`);
+                                                            else alert(r?.error || 'Epic library sync failed.');
+                                                        }}
+                                                        className="px-3 py-1.5 rounded-lg text-xs font-medium bg-blue-600 hover:bg-blue-500 text-white disabled:opacity-40 disabled:cursor-not-allowed"
+                                                    >
+                                                        Sync Epic catalog
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        disabled={!oauthPlatformStatus?.epic && !settings.integrations.epicId}
+                                                        onClick={async () => {
+                                                            if (oauthPlatformStatus?.epic) {
+                                                                await window.ipcRenderer.invoke('oauth:epic:logout');
+                                                                await refreshOauthPlatformStatus();
+                                                            } else {
+                                                                handleSelect('integrations', 'epicId', '');
+                                                            }
+                                                            await loadSettings();
+                                                        }}
+                                                        className="px-3 py-1.5 rounded-lg text-xs font-medium bg-red-500/15 text-red-400 hover:bg-red-500/25 disabled:opacity-40 disabled:cursor-not-allowed"
+                                                    >
+                                                        Sign out / clear ID
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
 
                                     {/* GOG */}
                                     <PlatformConnection 
@@ -669,19 +753,87 @@ const Settings: React.FC = () => {
                                         onDisconnect={() => handleSelect('integrations', 'gogId', '')}
                                     />
 
-                                    {/* Xbox */}
-                                    <PlatformConnection 
-                                        name="Xbox / Game Pass"
-                                        icon={<Monitor size={20} />} // Using Monitor as generic controller icon substitute
-                                        color="text-green-400"
-                                        bgColor="bg-green-600/20"
-                                        connectedId={settings.integrations.xboxId}
-                                        onConnect={() => {
-                                            const id = prompt("Enter Xbox Gamertag:");
-                                            if (id) handleSelect('integrations', 'xboxId', id);
-                                        }}
-                                        onDisconnect={() => handleSelect('integrations', 'xboxId', '')}
-                                    />
+                                    {/* Xbox / Microsoft — OAuth */}
+                                    <div className="py-4 border-b border-white/5 space-y-3">
+                                        <div className="flex items-start gap-3">
+                                            <div className="p-2 rounded-lg bg-green-600/20 text-green-400 shrink-0">
+                                                <Monitor size={20} />
+                                            </div>
+                                            <div className="flex-1 min-w-0">
+                                                <span className="text-sm text-gray-300 font-medium">Xbox / Game Pass</span>
+                                                <p className="text-xs text-gray-500 mt-1 leading-relaxed">
+                                                    Sign in with Microsoft (consumer tenant) to fetch Xbox Title Hub ownership via OAuth + PKCE.
+                                                    In Azure Portal → your app → Authentication, add platform redirect{' '}
+                                                    <code className="text-gray-400 whitespace-nowrap">http://127.0.0.1:18749/callback</code>.
+                                                </p>
+                                                {oauthPlatformStatus && !oauthPlatformStatus.microsoftClientConfigured && (
+                                                    <p className="text-xs text-amber-400/90 mt-2">
+                                                        Set <code className="text-amber-200/80">MICROSOFT_OAUTH_CLIENT_ID</code> in{' '}
+                                                        <code className="text-amber-200/80">raeen/.env</code> and restart the launcher.
+                                                    </p>
+                                                )}
+                                                <span
+                                                    className={`text-xs mt-2 block ${
+                                                        oauthPlatformStatus?.microsoft || settings.integrations.xboxId
+                                                            ? 'text-green-400'
+                                                            : 'text-gray-500'
+                                                    }`}
+                                                >
+                                                    {oauthPlatformStatus?.microsoft || settings.integrations.xboxId
+                                                        ? `Signed in${settings.integrations.xboxId ? ` — ${settings.integrations.xboxId}` : ''}`
+                                                        : 'Not signed in'}
+                                                </span>
+                                                <div className="flex flex-wrap gap-2 mt-3">
+                                                    <button
+                                                        type="button"
+                                                        onClick={async () => {
+                                                            const r = await window.ipcRenderer.invoke('oauth:microsoft:login');
+                                                            await refreshOauthPlatformStatus();
+                                                            await loadSettings();
+                                                            if (r?.ok) alert('Microsoft / Xbox connected.');
+                                                            else alert(r?.error || 'Microsoft sign-in failed or was cancelled.');
+                                                        }}
+                                                        className="px-3 py-1.5 rounded-lg text-xs font-medium bg-green-700/40 text-green-100 hover:bg-green-700/55 border border-green-500/30"
+                                                    >
+                                                        Sign in with Microsoft
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        disabled={!oauthPlatformStatus?.microsoft}
+                                                        onClick={async () => {
+                                                            const r =
+                                                                await window.ipcRenderer.invoke('oauth:microsoft:syncLibrary');
+                                                            await loadGames();
+                                                            if (r?.ok)
+                                                                alert(`Synced ${r.upserted ?? 0} titles from Xbox.`);
+                                                            else alert(r?.error || 'Xbox library sync failed.');
+                                                        }}
+                                                        className="px-3 py-1.5 rounded-lg text-xs font-medium bg-blue-600 hover:bg-blue-500 text-white disabled:opacity-40 disabled:cursor-not-allowed"
+                                                    >
+                                                        Sync Xbox catalog
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        disabled={
+                                                            !oauthPlatformStatus?.microsoft && !settings.integrations.xboxId
+                                                        }
+                                                        onClick={async () => {
+                                                            if (oauthPlatformStatus?.microsoft) {
+                                                                await window.ipcRenderer.invoke('oauth:microsoft:logout');
+                                                                await refreshOauthPlatformStatus();
+                                                            } else {
+                                                                handleSelect('integrations', 'xboxId', '');
+                                                            }
+                                                            await loadSettings();
+                                                        }}
+                                                        className="px-3 py-1.5 rounded-lg text-xs font-medium bg-red-500/15 text-red-400 hover:bg-red-500/25 disabled:opacity-40 disabled:cursor-not-allowed"
+                                                    >
+                                                        Sign out / clear gamertag
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
                                 </div>
                             </SettingGroup>
                         </div>

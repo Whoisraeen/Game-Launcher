@@ -10,22 +10,9 @@ interface CalendarEvent {
     gameName?: string;
 }
 
-const UPCOMING_RELEASES: CalendarEvent[] = [
-    { id: 'r1', date: new Date(2026, 4, 15).getTime(), title: 'Hollow Knight: Silksong', type: 'release', description: 'Metroidvania sequel' },
-    { id: 'r2', date: new Date(2026, 4, 20).getTime(), title: 'GTA VI', type: 'release', description: 'Open world action' },
-    { id: 'r3', date: new Date(2026, 5, 1).getTime(), title: 'Fable', type: 'release', description: 'Action RPG reboot' },
-    { id: 'r4', date: new Date(2026, 5, 10).getTime(), title: 'Avowed', type: 'release', description: 'First-person RPG' },
-    { id: 'r5', date: new Date(2026, 5, 22).getTime(), title: 'Death Stranding 2', type: 'release', description: 'Action adventure' },
-    { id: 'r6', date: new Date(2026, 6, 4).getTime(), title: 'Doom: The Dark Ages', type: 'release', description: 'FPS' },
-    { id: 'r7', date: new Date(2026, 6, 18).getTime(), title: 'Metroid Prime 4', type: 'release', description: 'FPS adventure' },
-    { id: 'r8', date: new Date(2026, 7, 5).getTime(), title: 'Monster Hunter Wilds', type: 'release', description: 'Action RPG' },
-    { id: 'r9', date: new Date(2026, 8, 12).getTime(), title: 'Elder Scrolls VI', type: 'release', description: 'Open world RPG' },
-    { id: 'r10', date: new Date(2026, 4, 28).getTime(), title: 'Elden Ring DLC 2', type: 'release', description: 'Action RPG expansion' },
-];
-
 const GameCalendar: React.FC = () => {
     const [currentDate, setCurrentDate] = useState(new Date());
-    const [events, setEvents] = useState<CalendarEvent[]>(UPCOMING_RELEASES);
+    const [events, setEvents] = useState<CalendarEvent[]>([]);
     const [selectedDate, setSelectedDate] = useState<number | null>(null);
 
     const year = currentDate.getFullYear();
@@ -37,8 +24,9 @@ const GameCalendar: React.FC = () => {
 
     const loadEvents = async () => {
         try {
-            const [sessions] = await Promise.all([
+            const [sessions, releases] = await Promise.all([
                 window.ipcRenderer.invoke('session:getForMonth', year, month).catch(() => []),
+                window.ipcRenderer.invoke('games:getCalendarReleasesForMonth', year, month).catch(() => []),
             ]);
 
             const sessionEvents: CalendarEvent[] = (sessions || []).map((s: any) => ({
@@ -50,7 +38,16 @@ const GameCalendar: React.FC = () => {
                 gameName: s.gameName,
             }));
 
-            setEvents([...UPCOMING_RELEASES, ...sessionEvents]);
+            const releaseEvents: CalendarEvent[] = (releases || []).map((r: any) => ({
+                id: r.id,
+                date: r.date,
+                title: r.title,
+                type: 'release' as const,
+                description: r.description,
+                gameName: r.gameName,
+            }));
+
+            setEvents([...releaseEvents, ...sessionEvents]);
         } catch (error) {
             console.error('Failed to load calendar events:', error);
         }
@@ -97,7 +94,9 @@ const GameCalendar: React.FC = () => {
             <div className="flex justify-between items-end mb-6">
                 <div>
                     <h1 className="text-4xl font-black text-white tracking-tighter drop-shadow-md mb-2">CALENDAR</h1>
-                    <p className="text-gray-400 font-medium">Game releases, sessions, and subscriptions at a glance</p>
+                    <p className="text-gray-400 font-medium">
+                        Releases from your library metadata & DLC tracker, plus planned sessions
+                    </p>
                 </div>
             </div>
 

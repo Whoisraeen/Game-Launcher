@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Target, Trophy, Calendar, TrendingUp, Plus, X, Pencil, Trash2 } from 'lucide-react';
 import { useGameStore } from '../../stores/gameStore';
@@ -32,8 +32,8 @@ const PlaytimeGoals: React.FC = () => {
   useEffect(() => { setGoals(loadGoals()); loadWeeklyActivity(); }, []);
   useEffect(() => { saveGoals(goals); }, [goals]);
 
-  const weeklyHours = weeklyActivity.reduce((sum, d) => sum + d.hours, 0);
-  const totalLifetime = games.reduce((sum, g) => sum + (g.playtime || 0), 0);
+  const weeklyHours = weeklyActivity.reduce((sum, d) => sum + (Number(d.hours) || 0), 0);
+  const totalLifetime = games.reduce((sum, g) => sum + (Number(g.playtime) || 0), 0);
   const totalCompleted = games.filter(g => g.playStatus === 'completed').length;
   const totalAchievements = games.reduce((sum, g) => sum + (g.achievements?.unlocked || 0), 0);
 
@@ -76,7 +76,7 @@ const PlaytimeGoals: React.FC = () => {
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
-        <Stat icon={<Calendar size={18} />}   label="This Week"     value={`${weeklyHours.toFixed(1)}h`} />
+        <Stat icon={<Calendar size={18} />}   label="This Week"     value={`${(Number.isFinite(weeklyHours) ? weeklyHours : 0).toFixed(1)}h`} />
         <Stat icon={<TrendingUp size={18} />} label="Lifetime"      value={`${Math.round(totalLifetime)}h`} />
         <Stat icon={<Trophy size={18} />}     label="Completed"     value={`${totalCompleted}`} />
         <Stat icon={<Target size={18} />}     label="Active Goals"  value={`${goals.length}`} />

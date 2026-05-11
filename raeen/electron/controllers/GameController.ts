@@ -135,6 +135,15 @@ export class GameController {
              return this.gameManager.getWeeklyActivity();
         });
 
+        ipcMain.handle('games:getCalendarReleasesForMonth', (_, year: number, month: number) => {
+            try {
+                return this.gameManager.getCalendarReleasesForMonth(year, month);
+            } catch (error) {
+                console.error('Failed to get calendar releases:', error);
+                return [];
+            }
+        });
+
         ipcMain.handle('games:getAverageSessionDuration', () => {
              return this.gameManager.getAverageSessionDuration();
         });

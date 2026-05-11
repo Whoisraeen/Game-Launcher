@@ -291,6 +291,19 @@ export class PriceTrackerService {
    * Add game to wishlist
    */
   addToWishlist(game: Omit<WishlistGame, 'id' | 'addedAt' | 'priceHistory'>): string {
+    const platform = game.platform || 'Steam';
+    const platformId = String(game.platformId);
+
+    try {
+      const db = getDb();
+      const existing = db
+        .prepare('SELECT id FROM wishlist WHERE lower(platform) = lower(?) AND platformId = ?')
+        .get(platform, platformId) as { id: string } | undefined;
+      if (existing) return existing.id;
+    } catch (e) {
+      console.warn('addToWishlist duplicate check failed:', e);
+    }
+
     const id = `wishlist_${game.platformId}_${Date.now()}`;
 
     try {
@@ -304,8 +317,8 @@ export class PriceTrackerService {
       `).run(
         id,
         game.title,
-        game.platform,
-        game.platformId,
+        platform,
+        platformId,
         game.coverUrl || null,
         game.currentPrice || null,
         game.originalPrice || null,
@@ -491,5 +504,93 @@ export class PriceTrackerService {
       console.error('Failed to get wishlist stats:', error);
       return { totalGames: 0, totalValue: 0, discountedGames: 0, averageDiscount: 0 };
     }
+  }
+
+  /**
+   * Pull public Steam wishlist (store) for a Steam64 ID and merge into local DB.
+   */
+  async importSteamWishlist(steamId: string): Promise<{ added: number; skipped: number; failed: number }> {
+    const sid = String(steamId).trim();
+    const result = { added: 0, skipped: 0, failed: 0 };
+    if (!/^\d+$/.test(sid)) {
+      throw new Error('Invalid Steam ID — use your numeric Steam64 (Integrations in Settings).');
+    }
+
+    try {
+      const url = `https://store.steampowered.com/wishlist/profiles/${sid}/wishlistdata/?v=1`;
+      const res = await axios.get(url, {
+        timeout: 20000,
+        headers: {
+          Accept: 'application/json',
+          'User-Agent':
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36',
+        },
+      });
+
+      const data = res.data;
+      if (!data || typeof data !== 'object') {
+        throw new Error('Wishlist response was empty (profile may be private or Steam unavailable).');
+      }
+
+      const appIds = Object.keys(data).filter(k => /^\d+$/.test(k));
+      const CONCURRENCY = 5;
+      const db = getDb();
+
+      const fetchTitle = async (appId: string): Promise<string> => {
+        try {
+          const r = await axios.get(`https://store.steampowered.com/api/appdetails`, {
+            params: { appids: appId },
+            timeout: 12000,
+            headers: {
+              'User-Agent':
+                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36',
+            },
+          });
+          const block = r.data?.[appId];
+          if (block?.success && block.data?.name) return String(block.data.name);
+        } catch {
+          /* ignore */
+        }
+        return `Steam app ${appId}`;
+      };
+
+      let cursor = 0;
+      const worker = async () => {
+        while (cursor < appIds.length) {
+          const idx = cursor++;
+          const appId = appIds[idx];
+          try {
+            const exists = db
+              .prepare('SELECT id FROM wishlist WHERE lower(platform) = lower(?) AND platformId = ?')
+              .get('Steam', appId);
+            if (exists) {
+              result.skipped++;
+              continue;
+            }
+            const title = await fetchTitle(appId);
+            this.addToWishlist({
+              title,
+              platform: 'Steam',
+              platformId: appId,
+              coverUrl: `https://cdn.cloudflare.steamstatic.com/steam/apps/${appId}/header.jpg`,
+              discountPercent: 0,
+              currency: 'USD',
+              priceAlertEnabled: false,
+            });
+            result.added++;
+          } catch {
+            result.failed++;
+          }
+          await new Promise(r => setTimeout(r, 120));
+        }
+      };
+
+      await Promise.all(Array.from({ length: Math.min(CONCURRENCY, appIds.length) }, () => worker()));
+    } catch (e: any) {
+      console.error('importSteamWishlist failed:', e);
+      throw new Error(e?.message || 'Steam wishlist import failed');
+    }
+
+    return result;
   }
 }

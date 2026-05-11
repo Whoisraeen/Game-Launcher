@@ -51,8 +51,11 @@ const DLCManager: React.FC = () => {
     setLoading(true);
     try {
       const allDlcs = await window.ipcRenderer.invoke('dlc:getAll');
-      setDlcs(allDlcs.map((d: any) => ({
+      const rows = Array.isArray(allDlcs) ? allDlcs : [];
+      setDlcs(rows.map((d: any) => ({
         ...d,
+        name: d?.name ?? 'Untitled DLC',
+        currency: d?.currency ?? 'USD',
         owned: Boolean(d.owned),
         installed: Boolean(d.installed)
       })));
@@ -66,7 +69,11 @@ const DLCManager: React.FC = () => {
   const loadStats = async () => {
     try {
       const dlcStats = await window.ipcRenderer.invoke('dlc:getStats');
-      setStats(dlcStats);
+      setStats((prev) => ({
+        ...prev,
+        ...dlcStats,
+        ownedValue: typeof dlcStats?.ownedValue === 'number' ? dlcStats.ownedValue : prev.ownedValue,
+      }));
     } catch (error) {
       console.error('Failed to load DLC stats:', error);
     }
@@ -119,7 +126,7 @@ const DLCManager: React.FC = () => {
           return (b.releaseDate || 0) - (a.releaseDate || 0);
         case 'name':
         default:
-          return a.name.localeCompare(b.name);
+          return (a.name || '').localeCompare(b.name || '');
       }
     });
 
@@ -214,7 +221,7 @@ const DLCManager: React.FC = () => {
           <div className="flex items-center justify-between mb-2">
             <DollarSign size={24} className="text-yellow-400" />
           </div>
-          <p className="text-3xl font-black text-white">${stats.ownedValue.toFixed(2)}</p>
+          <p className="text-3xl font-black text-white">${(stats.ownedValue ?? 0).toFixed(2)}</p>
           <p className="text-sm text-gray-400">Collection Value</p>
         </div>
       </div>

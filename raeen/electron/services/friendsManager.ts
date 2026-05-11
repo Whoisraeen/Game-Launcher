@@ -386,7 +386,10 @@ export class FriendsManager {
              ORDER BY last_seen DESC LIMIT 10`
         ).all() as any[];
 
+        const playingIds = new Set(playing.map((f: any) => f.id));
+
         online.forEach((f: any) => {
+            if (playingIds.has(f.id)) return;
             events.push({
                 id: `online-${f.id}`,
                 type: 'online',

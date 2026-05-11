@@ -392,7 +392,13 @@ export class DLCTrackerService {
   /**
    * Get DLC statistics
    */
-  getDLCStats(): { total: number; owned: number; installed: number; totalValue: number } {
+  getDLCStats(): {
+    total: number;
+    owned: number;
+    installed: number;
+    totalValue: number;
+    ownedValue: number;
+  } {
     try {
       const db = getDb();
       const stats = db.prepare(`
@@ -400,7 +406,8 @@ export class DLCTrackerService {
           COUNT(*) as total,
           SUM(CASE WHEN owned = 1 THEN 1 ELSE 0 END) as owned,
           SUM(CASE WHEN installed = 1 THEN 1 ELSE 0 END) as installed,
-          SUM(CASE WHEN owned = 0 AND price IS NOT NULL THEN price ELSE 0 END) as totalValue
+          SUM(CASE WHEN owned = 0 AND price IS NOT NULL THEN price ELSE 0 END) as totalValue,
+          SUM(CASE WHEN owned = 1 AND price IS NOT NULL THEN price ELSE 0 END) as ownedValue
         FROM dlcs
       `).get() as any;
 
@@ -408,11 +415,12 @@ export class DLCTrackerService {
         total: stats.total || 0,
         owned: stats.owned || 0,
         installed: stats.installed || 0,
-        totalValue: stats.totalValue || 0
+        totalValue: stats.totalValue || 0,
+        ownedValue: stats.ownedValue || 0,
       };
     } catch (error) {
       console.error('Failed to get DLC stats:', error);
-      return { total: 0, owned: 0, installed: 0, totalValue: 0 };
+      return { total: 0, owned: 0, installed: 0, totalValue: 0, ownedValue: 0 };
     }
   }
 

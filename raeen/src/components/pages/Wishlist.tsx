@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, ShoppingCart, ExternalLink, TrendingDown, Bell, BellOff, RefreshCw, X, Trash2, DollarSign } from 'lucide-react';
+import { Plus, ShoppingCart, ExternalLink, TrendingDown, Bell, BellOff, RefreshCw, X, Trash2, DollarSign, Download } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { CachedImage } from '../CachedImage';
 
@@ -37,6 +37,7 @@ const Wishlist: React.FC = () => {
   const [priceAlerts, setPriceAlerts] = useState<PriceAlert[]>([]);
   const [loading, setLoading] = useState(true);
   const [checking, setChecking] = useState(false);
+  const [importingSteam, setImportingSteam] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
   const [newGameUrl, setNewGameUrl] = useState('');
   const [selectedGame, setSelectedGame] = useState<WishlistGame | null>(null);
@@ -78,7 +79,7 @@ const Wishlist: React.FC = () => {
   const checkPrices = async () => {
     setChecking(true);
     try {
-      const newAlerts = await window.ipcRenderer.invoke('wishlist:checkPrices');
+      await window.ipcRenderer.invoke('wishlist:checkPrices');
       await loadWishlist();
       await loadAlerts();
     } catch (error) {
@@ -86,6 +87,25 @@ const Wishlist: React.FC = () => {
     } finally {
       setChecking(false);
     }
+  };
+
+  const importSteamWishlist = async () => {
+    setImportingSteam(true);
+    try {
+      const r = await window.ipcRenderer.invoke('wishlist:importSteam');
+      const msg = `Steam wishlist: added ${r?.added ?? 0}, skipped ${r?.skipped ?? 0}${r?.failed ? `, errors ${r.failed}` : ''}`;
+      alert(msg);
+      await loadWishlist();
+    } catch (error: unknown) {
+      const m = error instanceof Error ? error.message : String(error);
+      alert(m || 'Steam import failed.');
+    } finally {
+      setImportingSteam(false);
+    }
+  };
+
+  const openStoreWishlist = (url: string) => {
+    window.ipcRenderer.invoke('shell:openExternal', url);
   };
 
   const addToWishlist = async () => {
@@ -188,6 +208,44 @@ const Wishlist: React.FC = () => {
           <p className="text-gray-400 font-medium">
             Track prices and get alerts for your favorite games
           </p>
+          <p className="text-xs text-gray-500 mt-2 max-w-2xl">
+            Import your public <span className="text-gray-400">Steam</span> wishlist automatically (Steam ID in Settings → Integrations).
+            Epic and Xbox do not expose a stable public wishlist API — use the shortcuts below, then paste store URLs with <span className="text-gray-400">Add Game</span>.
+          </p>
+        </div>
+
+        <div className="flex flex-col items-end gap-2">
+        <div className="flex flex-wrap gap-2 justify-end">
+          <button
+            type="button"
+            onClick={importSteamWishlist}
+            disabled={checking || importingSteam}
+            className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:bg-gray-600 rounded-xl font-bold text-white transition-all text-sm"
+          >
+            <Download size={18} className={importingSteam ? 'animate-pulse' : ''} />
+            {importingSteam ? 'Importing…' : 'Import Steam wishlist'}
+          </button>
+          <button
+            type="button"
+            onClick={() => openStoreWishlist('https://store.epicgames.com/en-US/wishlist')}
+            className="flex items-center gap-2 px-3 py-2 bg-white/10 hover:bg-white/15 rounded-xl font-semibold text-white text-sm border border-white/10"
+          >
+            <ExternalLink size={16} /> Epic wishlist
+          </button>
+          <button
+            type="button"
+            onClick={() => openStoreWishlist('https://www.microsoft.com/store/wishlists')}
+            className="flex items-center gap-2 px-3 py-2 bg-white/10 hover:bg-white/15 rounded-xl font-semibold text-white text-sm border border-white/10"
+          >
+            <ExternalLink size={16} /> Xbox wishlist
+          </button>
+          <button
+            type="button"
+            onClick={() => openStoreWishlist('https://www.gog.com/en/wishlist')}
+            className="flex items-center gap-2 px-3 py-2 bg-white/10 hover:bg-white/15 rounded-xl font-semibold text-white text-sm border border-white/10"
+          >
+            <ExternalLink size={16} /> GOG wishlist
+          </button>
         </div>
 
         <div className="flex gap-2">
@@ -206,6 +264,7 @@ const Wishlist: React.FC = () => {
           >
             <Plus size={20} /> Add Game
           </button>
+        </div>
         </div>
       </div>
 

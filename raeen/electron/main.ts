@@ -44,6 +44,7 @@ import { StoreService } from './services/storeService';
 import { Store } from './store';
 import { StoreService as ElectronStoreService } from './services/store';
 import { AuthManager } from './services/AuthManager';
+import { PlatformOAuthCoordinator } from './services/platformOAuthCoordinator';
 import { AudioService } from './services/audioService';
 import { NetworkService } from './services/networkService';
 import { CompatibilityService } from './services/compatibilityService';
@@ -100,6 +101,35 @@ let systemController: SystemController;
 let friendsController: FriendsController;
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
+
+/** Load `.env` from project root into process.env (main bundle doesn't auto-load Vite env). */
+function loadLocalEnv() {
+  try {
+    const envPath = path.join(__dirname, '..', '.env');
+    if (!fs.existsSync(envPath)) return;
+    const raw = fs.readFileSync(envPath, 'utf8');
+    for (const line of raw.split('\n')) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith('#')) continue;
+      const eq = trimmed.indexOf('=');
+      if (eq <= 0) continue;
+      const key = trimmed.slice(0, eq).trim();
+      let val = trimmed.slice(eq + 1).trim();
+      if (!key || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) continue;
+      if (
+        (val.startsWith('"') && val.endsWith('"')) ||
+        (val.startsWith("'") && val.endsWith("'"))
+      ) {
+        val = val.slice(1, -1);
+      }
+      if (process.env[key] === undefined) process.env[key] = val;
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
+loadLocalEnv();
 
 // Handle creating/removing shortcuts on Windows when installing/uninstalling.
 if (require('electron-squirrel-startup')) {
@@ -255,6 +285,7 @@ app.whenReady().then(async () => {
     expenseTrackerService = new ExpenseTrackerService();
     storeService = new StoreService();
     authManager = new AuthManager();
+    void new PlatformOAuthCoordinator(gameManager, settingsManager);
     audioService = new AudioService();
     networkService = new NetworkService();
     compatibilityService = new CompatibilityService();
@@ -1013,6 +1044,20 @@ app.whenReady().then(async () => {
           return priceTrackerService.getWishlistStats();
         } catch (error) {
           console.error('Failed to get wishlist stats:', error);
+          throw error;
+        }
+    });
+
+    ipcMain.handle('wishlist:importSteam', async () => {
+        try {
+          const settings = settingsManager.getAllSettings();
+          const steamId = String(settings.integrations?.steamId ?? '').trim();
+          if (!steamId) {
+            throw new Error('Add your Steam ID under Settings → Integrations before importing.');
+          }
+          return await priceTrackerService.importSteamWishlist(steamId);
+        } catch (error) {
+          console.error('wishlist:importSteam failed:', error);
           throw error;
         }
     });

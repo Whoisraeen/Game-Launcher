@@ -1,6 +1,32 @@
 import { create } from 'zustand';
 import { Game, Collection } from '../types';
 
+/** Main returns either 7 daily minute totals or legacy `{ name, hours }[]` for charts/goals. */
+function normalizeWeeklyActivity(raw: unknown): { name: string; hours: number }[] {
+    if (!Array.isArray(raw) || raw.length === 0) return [];
+    if (typeof raw[0] === 'number') {
+        const labels: string[] = [];
+        for (let i = 0; i < raw.length; i++) {
+            const d = new Date();
+            d.setHours(0, 0, 0, 0);
+            d.setDate(d.getDate() - (raw.length - 1 - i));
+            labels.push(
+                d.toLocaleDateString(undefined, { weekday: 'short', month: 'numeric', day: 'numeric' })
+            );
+        }
+        return raw.map((minutes: unknown, i: number) => ({
+            name: labels[i] ?? `Day ${i + 1}`,
+            hours: Math.round(((Number(minutes) || 0) / 60) * 10) / 10,
+        }));
+    }
+    return raw
+        .filter((x: unknown) => x && typeof x === 'object' && x !== null && 'hours' in (x as object))
+        .map((x: any) => ({
+            name: String(x.name ?? ''),
+            hours: Number(x.hours) || 0,
+        }));
+}
+
 interface GameState {
     games: Game[];
     recommendations: Game[];
@@ -346,7 +372,7 @@ export const useGameStore = create<GameState>((set, get) => ({
     loadWeeklyActivity: async () => {
         try {
             const result = await window.ipcRenderer.invoke('games:getWeeklyActivity');
-            set({ weeklyActivity: result });
+            set({ weeklyActivity: normalizeWeeklyActivity(result) });
         } catch (error) {
             console.error('Failed to load weekly activity:', error);
         }
